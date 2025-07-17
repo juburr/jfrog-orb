@@ -1,0 +1,19 @@
+description: >
+  Runs the placeholder hello world command.
+
+usage:
+  version: 2.1
+  orbs:
+    jfrog: juburr/jfrog-orb@latest
+  jobs:
+    hello_world:
+      docker:
+        - image: cimg/base:current
+      steps:
+        - checkout
+        - jfrog/greet
+
+  workflows:
+    use-my-orb:
+      jobs:
+        - hello_world

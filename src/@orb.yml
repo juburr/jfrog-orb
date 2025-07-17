@@ -1,0 +1,8 @@
+version: 2.1
+
+description: >
+  Streamlines JFrog CLI installation and use in CircleCI pipelines.
+
+display:
+  home_url: "https://github.com/juburr/jfrog-orb"
+  source_url: "https://github.com/juburr/jfrog-orb"
