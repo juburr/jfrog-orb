@@ -4,13 +4,13 @@ description: >
 usage:
   version: 2.1
   orbs:
-    jfrog: juburr/jfrog-orb@0.1.0
+    jfrog-orb: juburr/jfrog-orb@0.1.0
   jobs:
     jfrog-sbom:
       docker:
         - image: cimg/base:current-22.04
       steps:
-        - jfrog/install
+        - jfrog-orb/install
 
   workflows:
     use-my-orb:
