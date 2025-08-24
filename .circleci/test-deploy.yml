@@ -19,7 +19,10 @@ jobs:
       - image: cimg/base:current
     steps:
       - checkout
-      - jfrog-orb/greet
+      - jfrog-orb/install
+      - run:
+          name: Verify Install
+          command: command -v jf
 
 workflows:
   test-deploy:
