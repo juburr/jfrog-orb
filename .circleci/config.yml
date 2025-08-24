@@ -16,13 +16,13 @@ workflows:
       - orb-tools/pack:
           filters: *filters
       - orb-tools/review:
-          orb_name: juburr/jfrog-orb
+          orb_name: jfrog-orb
           filters: *filters
       - shellcheck/check:
           filters: *filters
       - orb-tools/continue:
           pipeline_number: << pipeline.number >>
           vcs_type: << pipeline.project.type >>
-          orb_name: juburr/jfrog-orb
+          orb_name: jfrog-orb
           requires: [orb-tools/lint, orb-tools/pack, orb-tools/review, shellcheck/check]
           filters: *filters
