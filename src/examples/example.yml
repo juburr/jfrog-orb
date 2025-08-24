@@ -4,7 +4,7 @@ description: >
 usage:
   version: 2.1
   orbs:
-    jfrog: juburr/jfrog-orb@latest
+    jfrog: juburr/jfrog-orb@0.1.0
   jobs:
     jfrog-sbom:
       docker:
