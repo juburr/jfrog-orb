@@ -1,0 +1,42 @@
+description: Installs the jf binary. This command should be invoked prior to calling any other commands.
+parameters:
+  caching:
+    type: boolean
+    default: true
+  install_path:
+    type: string
+    default: "/home/circleci/bin"
+    description: Path to a binary directory not requiring root access (no trailing slash).
+  verify_checksums:
+    type: enum
+    enum: ["false", "known_versions", "strict"]
+    default: known_versions
+    description: Option to perform SHA-512 checksum verification on the downloaded jf executable.
+  version:
+    type: string
+    default: "2.78.5"
+    description: Specify the semver of the jf version to install.
+steps:
+  - when:
+      condition: << parameters.caching >>
+      steps:
+        - restore_cache:
+            key: jf-cache-<< parameters.version >>
+  - run:
+      name: Install jf
+      environment:
+        PARAM_INSTALL_PATH: << parameters.install_path >>
+        PARAM_VERIFY_CHECKSUMS: << parameters.verify_checksums >>
+        PARAM_VERSION: << parameters.version >>
+      shell: /bin/bash
+      command: << include(scripts/install.sh) >>
+  - when:
+      condition: << parameters.caching >>
+      steps:
+        - save_cache:
+            key: jf-cache-<< parameters.version >>
+            paths:
+              - jf.tar.gz
+  - run:
+      name: Cleanup jf Install
+      command: rm jf.tar.gz

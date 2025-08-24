@@ -1,19 +1,18 @@
 description: >
-  Runs the placeholder hello world command.
+  The `install` command is used to simplify installation of the JFrog CLI tool, jf.
 
 usage:
   version: 2.1
   orbs:
     jfrog: juburr/jfrog-orb@latest
   jobs:
-    hello_world:
+    jfrog-sbom:
       docker:
-        - image: cimg/base:current
+        - image: cimg/base:current-22.04
       steps:
-        - checkout
-        - jfrog/greet
+        - jfrog/install
 
   workflows:
     use-my-orb:
       jobs:
-        - hello_world
+        - jfrog-sbom
