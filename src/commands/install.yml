@@ -14,7 +14,7 @@ parameters:
     description: Option to perform SHA-512 checksum verification on the downloaded jf executable.
   version:
     type: string
-    default: "2.90.0"
+    default: "2.96.0"
     description: Specify the semver of the jf version to install.
 steps:
   - when:
