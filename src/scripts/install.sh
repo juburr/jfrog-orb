@@ -8,7 +8,8 @@ CLI_ARCH="amd64"
 CLI_OS="linux"
 CLI_MAJOR_VER="v2-jf"
 INSTALL_PATH=$(circleci env subst "${PARAM_INSTALL_PATH}")
-VERIFY_CHECKSUMS="${PARAM_VERIFY_CHECKSUMS}"
+# Fail closed: only an explicit opt-out installs a version the table doesn't list.
+VERIFY_CHECKSUMS="${PARAM_VERIFY_CHECKSUMS:-strict}"
 VERSION=$(circleci env subst "${PARAM_VERSION}")
 
 # Print command arguments for debugging purposes.
@@ -19,6 +20,14 @@ echo "  CLI_MAJOR_VER: ${CLI_MAJOR_VER}"
 echo "  INSTALL_PATH: ${INSTALL_PATH}"
 echo "  VERIFY_CHECKSUMS: ${VERIFY_CHECKSUMS}"
 echo "  VERSION: ${VERSION}"
+
+case "${VERIFY_CHECKSUMS}" in
+    strict | known_versions | false) ;;
+    *)
+        echo "ERROR: verify_checksums must be strict, known_versions or false, not '${VERIFY_CHECKSUMS}'."
+        exit 1
+        ;;
+esac
 
 # Lookup table of sha512 checksums for different versions of jf
 declare -A sha512sums
@@ -129,6 +138,22 @@ verify_checksum() {
     echo "Checksum verification passed!"
 }
 
+# Look up the expected checksum before downloading anything. If the version isn't
+# in the table, a new version of jf was released but this orb hasn't been updated
+# yet to include its checksum. Strict mode (the default) fails here rather than
+# fetch a binary it can't verify; known_versions is an explicit opt-out.
+EXPECTED_CHECKSUM="${sha512sums[${VERSION}]:-}"
+if [[ "${VERIFY_CHECKSUMS}" != "false" && -z "${EXPECTED_CHECKSUM}" ]]; then
+    if [[ "${VERIFY_CHECKSUMS}" == "known_versions" ]]; then
+        echo "WARN: No checksum available for version ${VERSION}, and verify_checksums is known_versions."
+        echo "WARN: Installing an UNVERIFIED binary. Upgrade this orb or submit a PR with the new checksum."
+    else
+        echo "ERROR: No checksum available for version ${VERSION}, so it cannot be verified (verify_checksums: strict)."
+        echo "ERROR: Upgrade this orb, submit a PR with the new checksum, or opt out with verify_checksums: known_versions."
+        exit 1
+    fi
+fi
+
 # Check if the jf tar file was in the CircleCI cache.
 # Cache restoration is handled in install.yml
 if [[ -f jf.tar.gz ]]; then
@@ -152,29 +177,12 @@ fi
 
 # An jf binary should exist at this point, regardless of whether it was obtained
 # through cache or re-downloaded. First verify its integrity.
-if [[ "${VERIFY_CHECKSUMS}" != "false" ]]; then
-    EXPECTED_CHECKSUM=${sha512sums[${VERSION}]}
-    if [[ -n "${EXPECTED_CHECKSUM}" ]]; then
-        # If the version is in the table, verify the checksum
-        verify_checksum "jf" "${EXPECTED_CHECKSUM}"
-    else
-        # If the version is not in the table, this means that a new version of jf
-        # was released but this orb hasn't been updated yet to include its checksum in
-        # the lookup table. Allow developers to configure if they want this to result in
-        # a hard error, via "strict mode" (recommended), or to allow execution for versions
-        # not directly specified in the above lookup table.
-        if [[ "${VERIFY_CHECKSUMS}" == "known_versions" ]]; then
-            echo "WARN: No checksum available for version ${VERSION}, but strict mode is not enabled."
-            echo "WARN: Either upgrade this orb, submit a PR with the new checksum."
-            echo "WARN: Skipping checksum verification..."
-        else
-            echo "ERROR: No checksum available for version ${VERSION} and strict mode is enabled."
-            echo "ERROR: Either upgrade this orb, submit a PR with the new checksum, or set 'verify_checksums' to 'known_versions'."
-            exit 1
-        fi
-    fi
-else
+if [[ "${VERIFY_CHECKSUMS}" == "false" ]]; then
     echo "WARN: Checksum validation is disabled. This is not recommended. Skipping..."
+elif [[ -n "${EXPECTED_CHECKSUM}" ]]; then
+    verify_checksum "jf" "${EXPECTED_CHECKSUM}"
+else
+    echo "WARN: Skipping checksum verification for unlisted version ${VERSION}..."
 fi
 
 # After verifying integrity, install it by moving it to an appropriate bin
