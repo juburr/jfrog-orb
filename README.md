@@ -10,7 +10,7 @@ This unofficial JFrog CLI orb facilitates the installation and execution of the 
 
 ## Checksum verification
 
-`install` checks the SHA-512 checksum of the downloaded `jf` binary against a lookup table built into this orb, including binaries restored from the CircleCI cache. The `verify_checksums` parameter controls what happens when the requested `version` is missing from that table:
+`install` downloads the Linux build of `jf` that matches the machine (`x86_64` → `jfrog-cli-linux-amd64`, `aarch64` → `jfrog-cli-linux-arm64`); other architectures and non-Linux machines fail with an error. It checks the SHA-512 checksum of the binary against a lookup table built into this orb, keyed by version and architecture, including binaries restored from the CircleCI cache. The `verify_checksums` parameter controls what happens when the requested `version` is missing from that table:
 
 | `verify_checksums` | Listed version | Unlisted version |
 | --- | --- | --- |
@@ -21,6 +21,10 @@ This unofficial JFrog CLI orb facilitates the installation and execution of the 
 If you pin a `jf` release newer than this orb knows about, upgrade the orb or contribute the checksum (see `src/scripts/install_hash.sh`). Use `known_versions` only as a temporary opt-out.
 
 ## Upgrade Notes
+
+### v0.2.0: arm64 support
+
+`install` now detects the machine architecture and installs `jfrog-cli-linux-arm64` on `aarch64` machines, verified against its own SHA-512 checksum. Every `jf` version in the checksum table (2.70.0 and later) has both amd64 and arm64 entries. Earlier releases installed the amd64 binary everywhere, which arm64 machines can't run natively. Other architectures and non-Linux machines now fail with an error instead of installing an amd64 binary. Cache keys now include the architecture, so the first run after upgrading downloads `jf` again.
 
 ### v0.2.0: checksum verification fails closed
 
