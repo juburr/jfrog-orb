@@ -8,6 +8,18 @@
 
 This unofficial JFrog CLI orb facilitates the installation and execution of the JFrog CLI tool (`jf`) within CircleCI pipelines. An official JFrog Artifactory orb can be found at: [jfrog/artifactory-orb](https://circleci.com/developer/orbs/orb/jfrog/artifactory-orb). This one differs in its ability to provide version locking of the `jf` tool, providing more stable and consistent CI environment that won't break on a Friday night. This avoids install scripts that greedily fetch the latest version every time.
 
+## Checksum verification
+
+`install` checks the SHA-512 checksum of the downloaded `jf` binary against a lookup table built into this orb, including binaries restored from the CircleCI cache. The `verify_checksums` parameter controls what happens when the requested `version` is missing from that table:
+
+| `verify_checksums` | Listed version | Unlisted version |
+| --- | --- | --- |
+| `strict` (default) | Verified | Fails before downloading anything |
+| `known_versions` | Verified | Installed **unverified**, with a warning |
+| `"false"` | Not verified | Not verified (not recommended) |
+
+If you pin a `jf` release newer than this orb knows about, upgrade the orb or contribute the checksum (see `src/scripts/install_hash.sh`). Use `known_versions` only as a temporary opt-out.
+
 ## Info for Security Teams
 
 ### Required external access
@@ -22,3 +34,17 @@ Hosts to allow if you run a locked-down, self-hosted CircleCI pipeline on-prem:
 - **Running `jf` in your own steps** (the orb doesn't do this, but your firewall will see it):
   - The JFrog Platform or Artifactory URLs you configure `jf` to use.
   - `api.github.com`: most `jf` commands check `https://api.github.com/repos/jfrog/jfrog-cli/releases/latest` for a newer CLI release. `jf` records the check in its home directory and repeats it every 6 hours, so on a fresh CI machine it happens once per job. If the check is blocked, `jf` prints a warning and carries on. Set `JFROG_CLI_AVOID_NEW_VERSION_WARNING=true` to turn it off.
+
+## Upgrade Notes
+
+### v0.2.0: checksum verification fails closed
+
+`install` now defaults to `verify_checksums: strict`. If you install a `jf` version that this orb has no SHA-512 checksum for, the step fails instead of installing an unverified binary. Earlier releases defaulted to `known_versions`, which printed a warning and installed it anyway.
+
+Pipelines that use the orb's default `jf` version, or any version in the checksum table, are unaffected. If you need a newer `jf` before the orb lists it, either upgrade the orb or opt out explicitly:
+
+```yaml
+- jfrog-orb/install:
+    version: "2.130.0"
+    verify_checksums: known_versions  # installs unlisted versions without verification
+```
