@@ -22,12 +22,47 @@ jobs:
       - jfrog-orb/install
       - run:
           name: Verify Install
-          command: command -v jf
+          command: |
+            command -v jf
+            # Bytes 18-19 of an ELF header are e_machine: 3e 00 is x86-64, b7 00 is aarch64.
+            test "$(od -An -tx1 -j18 -N2 "$(command -v jf)" | tr -d ' \n')" = "3e00"
+            jf --version
+
+  # Test install command on an arm64 machine: the arm64 asset, its checksum and an
+  # architecture-specific cache key. Running jf alone wouldn't prove the architecture
+  # if the image emulates amd64, so the ELF header is checked too.
+  command-test-arm64:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: arm.medium
+    steps:
+      - run:
+          name: Prepare install path
+          command: |
+            mkdir -p /home/circleci/bin
+            echo 'export PATH="/home/circleci/bin:${PATH}"' >> "${BASH_ENV}"
+            echo "uname -m: $(uname -m)"
+            test "$(uname -m)" = "aarch64"
+      - jfrog-orb/install
+      - run:
+          name: Verify the arm64 build of jf was installed
+          command: |
+            test "$(od -An -tx1 -j18 -N2 "$(command -v jf)" | tr -d ' \n')" = "b700"
+            jf --version
+      - jfrog-orb/install:
+          version: "2.70.0"
+      - run:
+          name: Verify the arm64 build of the oldest listed jf version was installed
+          command: |
+            test "$(od -An -tx1 -j18 -N2 "$(command -v jf)" | tr -d ' \n')" = "b700"
+            jf --version | grep -F "2.70.0"
 
 workflows:
   test-deploy:
     jobs:
       - command-test:
+          filters: *filters
+      - command-test-arm64:
           filters: *filters
       - orb-tools/pack:
           filters: *release-filters
@@ -38,5 +73,6 @@ workflows:
           requires:
             - orb-tools/pack
             - command-test
+            - command-test-arm64
           context: orb-publishing
           filters: *release-filters
