@@ -1,0 +1,89 @@
+description: >
+  Adds one JFrog server profile with jf config add, for later jf commands in the same job.
+  Run install first. url, access_token, user, and password default to JF_URL, JF_ACCESS_TOKEN,
+  JF_USER, and JF_PASSWORD. The access token or password is passed on stdin. The command fails
+  when the URL or credentials are missing, or when both a token and a password are set, because
+  jf config add exits 0 even if it stores an empty token. Password encryption is off unless
+  encrypt_password is true. This step does not call api.github.com to check for a newer jf.
+parameters:
+  server_id:
+    type: string
+    default: jfrog-server
+    description: >
+      Server id to write. Later commands use it as the default when use is true.
+      jf reserves the ids delete, use, show, and clear.
+  url:
+    type: string
+    default: "${JF_URL}"
+    description: >
+      JFrog Platform URL passed to --url, for example https://acme.jfrog.io.
+      This is not the Artifactory URL with an /artifactory suffix. The value is
+      expanded with circleci env subst. At least one of url and artifactory_url is required.
+  artifactory_url:
+    type: string
+    default: ""
+    description: >
+      Artifactory URL for a server that does not share one platform URL, such as
+      Artifactory 6. Prefer url for a JFrog Platform. Expanded with circleci env subst.
+  access_token:
+    type: string
+    default: "${JF_ACCESS_TOKEN}"
+    description: >
+      Access token, including a reference token, passed to jf on stdin.
+      Expanded with circleci env subst. Optional user is also stored when set.
+      Do not set this together with password.
+  user:
+    type: string
+    default: "${JF_USER}"
+    description: >
+      Username. Optional next to an access token. Required with password.
+      A reference token used by npm or Maven basic auth needs a username.
+      Expanded with circleci env subst.
+  password:
+    type: string
+    default: "${JF_PASSWORD}"
+    description: >
+      Password or API key, passed to jf on stdin. Expanded with circleci env subst.
+      Requires user. Do not set this together with access_token.
+  overwrite:
+    type: boolean
+    default: true
+    description: >
+      Replace an existing profile with the same server id. A rerun on a machine
+      executor with a persisted home directory then updates the token instead of failing.
+  insecure_tls:
+    type: boolean
+    default: false
+    description: >
+      Pass --insecure-tls while saving this profile. jf uses it when encrypting a
+      password and does not apply it to later commands. ping has its own insecure_tls.
+  encrypt_password:
+    type: boolean
+    default: false
+    description: >
+      Ask Artifactory to encrypt the password before saving it. This calls the
+      platform and sends the password there. Leave this false unless url points
+      at a JFrog Platform you trust. Access tokens are unaffected.
+  use:
+    type: boolean
+    default: true
+    description: >
+      Run jf config use for this server id and export JFROG_CLI_SERVER_ID for later
+      steps in the job. Set false when adding another server that should not become
+      the default. jf still marks the first server it saves as the default.
+steps:
+  - run:
+      name: Configure jf
+      environment:
+        PARAM_SERVER_ID: << parameters.server_id >>
+        PARAM_URL: << parameters.url >>
+        PARAM_ARTIFACTORY_URL: << parameters.artifactory_url >>
+        PARAM_ACCESS_TOKEN: << parameters.access_token >>
+        PARAM_USER: << parameters.user >>
+        PARAM_PASSWORD: << parameters.password >>
+        PARAM_OVERWRITE: << parameters.overwrite >>
+        PARAM_INSECURE_TLS: << parameters.insecure_tls >>
+        PARAM_ENCRYPT_PASSWORD: << parameters.encrypt_password >>
+        PARAM_USE: << parameters.use >>
+      shell: /bin/bash
+      command: << include(scripts/configure.sh) >>
