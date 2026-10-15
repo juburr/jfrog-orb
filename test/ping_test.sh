@@ -216,6 +216,18 @@ run_ping "insecure tls is passed through" pass "server id: jfrog-server"
 assert_log_has "insecure tls flag" "--insecure-tls=true"
 
 set_defaults
+export PARAM_INSECURE_TLS=1
+export JFROG_CLI_SERVER_ID=jfrog-server
+run_ping "circleci boolean 1 enables insecure tls" pass "server id: jfrog-server"
+assert_log_has "insecure tls 1 becomes the flag" "--insecure-tls=true"
+
+set_defaults
+export PARAM_INSECURE_TLS=0
+export JFROG_CLI_SERVER_ID=jfrog-server
+run_ping "circleci boolean 0 leaves insecure tls off" pass "server id: jfrog-server"
+assert_log_lacks "insecure tls 0 stays off" "--insecure-tls=true"
+
+set_defaults
 export PARAM_INSECURE_TLS=yes
 run_ping "a bad insecure_tls value fails" fail "insecure_tls must be true or false"
 if [[ -s "$JF_LOG" ]]; then

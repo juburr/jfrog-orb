@@ -407,6 +407,30 @@ export PARAM_INSECURE_TLS=true
 run_configure "insecure tls is passed through" pass "Configured jf server 'jfrog-server'."
 assert_log_has "insecure tls flag" "--insecure-tls=true"
 
+# CircleCI injects boolean parameters as 1 and 0 when they are step environment values.
+set_defaults
+export PARAM_OVERWRITE=1
+export PARAM_INSECURE_TLS=0
+export PARAM_ENCRYPT_PASSWORD=0
+export PARAM_USE=1
+run_configure "circleci boolean 1 and 0 are accepted" pass "Configured jf server 'jfrog-server'."
+assert_log_has "overwrite 1 becomes true" "--overwrite=true"
+assert_log_lacks "overwrite is not passed as 1" "--overwrite=1"
+assert_log_has "encrypt 0 becomes false" "--enc-password=false"
+assert_log_lacks "encrypt is not passed as 0" "--enc-password=0"
+assert_log_has "use 1 still selects the server" "config use jfrog-server"
+assert_log_lacks "insecure tls 0 stays off" "--insecure-tls=true"
+assert_out_lacks "normalized overwrite is logged as true" "overwrite: 1"
+
+set_defaults
+export PARAM_OVERWRITE=0
+export PARAM_USE=0
+export PARAM_INSECURE_TLS=1
+run_configure "circleci boolean 0 turns flags off" pass "Configured jf server 'jfrog-server'."
+assert_log_has "overwrite 0 becomes false" "--overwrite=false"
+assert_log_has "insecure tls 1 becomes the flag" "--insecure-tls=true"
+assert_log_lacks "use 0 skips config use" "config use"
+
 set_defaults
 export PARAM_USE=false
 run_configure "use false does not change the default server" pass "Configured jf server 'jfrog-server'."

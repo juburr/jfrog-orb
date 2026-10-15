@@ -24,18 +24,26 @@ trim() {
     printf '%s' "$value"
 }
 
+# CircleCI writes a boolean parameter into the step environment as 1 or 0.
+# The insecure-tls flag below needs the word true.
+normalize_bool() {
+    local name="$1"
+    local -n dest="$2"
+    case "$dest" in
+        true | TRUE | True | 1) dest=true ;;
+        false | FALSE | False | 0) dest=false ;;
+        *)
+            echo "ERROR: ${name} must be true or false, not '${dest}'."
+            exit 1
+            ;;
+    esac
+}
+
 # Pipe the value on stdin. `circleci env subst` with no argument reads stdin;
 # an empty argument is not a reliable way to expand an empty parameter.
 SERVER_ID="$(trim "$(printf '%s' "${PARAM_SERVER_ID-}" | circleci env subst)")"
 INSECURE_TLS="$(trim "${PARAM_INSECURE_TLS-}")"
-
-case "$INSECURE_TLS" in
-    true | false) ;;
-    *)
-        echo "ERROR: insecure_tls must be true or false, not '${INSECURE_TLS}'."
-        exit 1
-        ;;
-esac
+normalize_bool insecure_tls INSECURE_TLS
 
 # An empty server_id follows the id configure exported, then jf's default server.
 if [[ -z "$SERVER_ID" && -n "${JFROG_CLI_SERVER_ID:-}" ]]; then

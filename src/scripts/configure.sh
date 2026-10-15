@@ -55,12 +55,16 @@ redact_url() {
     printf '%s' "$url"
 }
 
-require_bool() {
-    local name="$1" value="$2"
-    case "$value" in
-        true | false) ;;
+# CircleCI writes a boolean parameter into the step environment as 1 or 0.
+# jf flags and the comparisons below need the words true and false.
+normalize_bool() {
+    local name="$1"
+    local -n dest="$2"
+    case "$dest" in
+        true | TRUE | True | 1) dest=true ;;
+        false | FALSE | False | 0) dest=false ;;
         *)
-            echo "ERROR: ${name} must be true or false, not '${value}'."
+            echo "ERROR: ${name} must be true or false, not '${dest}'."
             exit 1
             ;;
     esac
@@ -136,10 +140,10 @@ USE_SERVER="$(trim "${PARAM_USE-}")"
 # above are not exported.
 unset PARAM_ACCESS_TOKEN PARAM_PASSWORD
 
-require_bool overwrite "$OVERWRITE"
-require_bool insecure_tls "$INSECURE_TLS"
-require_bool encrypt_password "$ENCRYPT_PASSWORD"
-require_bool use "$USE_SERVER"
+normalize_bool overwrite OVERWRITE
+normalize_bool insecure_tls INSECURE_TLS
+normalize_bool encrypt_password ENCRYPT_PASSWORD
+normalize_bool use USE_SERVER
 
 if [[ -z "$SERVER_ID" ]]; then
     echo "ERROR: server_id is empty."
