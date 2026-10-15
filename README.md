@@ -190,15 +190,16 @@ The orb has one command, `install`.
 | Linux `aarch64` | ✅ | `jfrog-cli-linux-arm64` |
 | Other architectures, macOS, Windows | ❌ | Fails with an error instead of installing the wrong binary |
 
-The checksum table covers `jf` 2.70.0 and later on both architectures.
+The checksum table lists every `jf` release from 2.70.0 through 2.125.0, the default `version`, on both architectures. Newer releases fail in `strict` mode until the orb adds their checksums (see [Contributing](#-contributing)).
 
 ## 🔐 Checksum verification
 
 ```mermaid
 flowchart LR
-    A["Detect OS and<br/>architecture"] --> B{"Checksum in the<br/>orb's table?"}
-    B -- "no (strict)" --> X["❌ Fail before<br/>downloading"]
-    B -- yes --> C{"Cache hit?"}
+    R["Restore cache<br/>(if caching)"] --> A["Detect OS and<br/>architecture"]
+    A --> B{"Checksum in the<br/>orb's table?"}
+    B -- "no (strict)" --> X["❌ Fail before<br/>downloading from JFrog"]
+    B -- yes --> C{"jf restored<br/>from cache?"}
     C -- yes --> E["Verify SHA-512"]
     C -- no --> D["Download from<br/>releases.jfrog.io"]
     D --> E
@@ -210,7 +211,7 @@ flowchart LR
 
 | `verify_checksums` | Listed version | Unlisted version |
 | --- | --- | --- |
-| `strict` (default) | ✅ Verified | ❌ Fails before downloading anything |
+| `strict` (default) | ✅ Verified | ❌ Fails before downloading from JFrog |
 | `known_versions` | ✅ Verified | ⚠️ Installed **unverified**, with a warning |
 | `"false"` | ⚠️ Not verified | ⚠️ Not verified (not recommended) |
 
