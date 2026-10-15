@@ -1,7 +1,7 @@
 version: 2.1
 
 description: >
-  Streamlines JFrog CLI installation and use in CircleCI pipelines.
+  Installs a pinned JFrog CLI, configures a server profile, and pings Artifactory.
 
 display:
   home_url: "https://github.com/juburr/jfrog-orb"

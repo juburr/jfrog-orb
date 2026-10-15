@@ -1,18 +1,20 @@
 description: >
-  The `install` command is used to simplify installation of the JFrog CLI tool, jf.
+  Install a pinned jf, configure a server from JF_URL and JF_ACCESS_TOKEN, and ping Artifactory.
 
 usage:
   version: 2.1
   orbs:
-    jfrog-orb: juburr/jfrog-orb@0.1.0
+    jfrog-orb: juburr/jfrog-orb@0.2.0
   jobs:
-    jfrog-sbom:
+    jfrog-cli:
       docker:
         - image: cimg/base:current-22.04
       steps:
         - jfrog-orb/install
+        - jfrog-orb/configure
+        - jfrog-orb/ping
 
   workflows:
     use-my-orb:
       jobs:
-        - jfrog-sbom
+        - jfrog-cli

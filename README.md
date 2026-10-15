@@ -6,7 +6,15 @@
 
 [![CircleCI Build Status](https://circleci.com/gh/juburr/jfrog-orb.svg?style=shield "CircleCI Build Status")](https://circleci.com/gh/juburr/jfrog-orb) [![CircleCI Orb Version](https://badges.circleci.com/orbs/juburr/jfrog-orb.svg)](https://circleci.com/developer/orbs/orb/juburr/jfrog-orb) [![GitHub License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](https://raw.githubusercontent.com/juburr/jfrog-orb/master/LICENSE) [![CircleCI Community](https://img.shields.io/badge/community-CircleCI%20Discuss-343434.svg)](https://discuss.circleci.com/c/ecosystem/orbs)
 
-This unofficial JFrog CLI orb facilitates the installation and execution of the JFrog CLI tool (`jf`) within CircleCI pipelines. An official JFrog Artifactory orb can be found at: [jfrog/artifactory-orb](https://circleci.com/developer/orbs/orb/jfrog/artifactory-orb). This one differs in its ability to provide version locking of the `jf` tool, providing more stable and consistent CI environment that won't break on a Friday night. This avoids install scripts that greedily fetch the latest version every time.
+This unofficial JFrog CLI orb installs a pinned `jf` binary, writes a server profile, and pings Artifactory from CircleCI. An official JFrog Artifactory orb can be found at: [jfrog/artifactory-orb](https://circleci.com/developer/orbs/orb/jfrog/artifactory-orb). This one differs in its ability to provide version locking of the `jf` tool, providing a more stable and consistent CI environment that won't break on a Friday night. This avoids install scripts that greedily fetch the latest version every time.
+
+```yaml
+- jfrog-orb/install
+- jfrog-orb/configure
+- jfrog-orb/ping
+```
+
+`configure` reads `JF_URL` and `JF_ACCESS_TOKEN` from the job environment unless you pass `url` and `access_token`. Upload, build, and scan commands stay as `jf` calls in your own steps, against the version `install` put on `PATH`.
 
 ## Checksum verification
 
@@ -20,6 +28,41 @@ This unofficial JFrog CLI orb facilitates the installation and execution of the 
 
 If you pin a `jf` release newer than this orb knows about, upgrade the orb or contribute the checksum (see `src/scripts/install_hash.sh`). Use `known_versions` only as a temporary opt-out.
 
+## Configure
+
+`configure` runs `jf config add`, then checks `jf config show`. Run it after `install`. The default server id is `jfrog-server`.
+
+| Parameter | Default | Passed to `jf` as |
+| --- | --- | --- |
+| `url` | `${JF_URL}` | `--url` (the platform URL, for example `https://acme.jfrog.io`) |
+| `access_token` | `${JF_ACCESS_TOKEN}` | `--access-token-stdin` |
+| `user` | `${JF_USER}` | `--user` |
+| `password` | `${JF_PASSWORD}` | `--password-stdin` |
+
+`user` is optional next to an access token. It is required with a password. A reference token used by npm or Maven basic auth needs that username. Parameter values are expanded with `circleci env subst`, which is what makes `${JF_URL}` work.
+
+`jf config add` exits 0 when the token is empty and still writes the server. `configure` fails in that case. It also fails when the URL is missing, or when both a token and a password are set. If `JF_ACCESS_TOKEN` and `JF_PASSWORD` are both set in the job, unset the one this command should not use.
+
+The secret goes to `jf` on stdin. On success the command runs `jf config use` and appends `JFROG_CLI_SERVER_ID` to `$BASH_ENV`, so later steps in the job do not need `--server-id`. Set `use: false` when adding a second server that should not become the default. `jf` still marks the first server it saves as the default.
+
+`url` is the platform URL. A value that ends in `/artifactory` is an Artifactory URL; the command warns and keeps going. For an Artifactory 6 server that does not share one platform URL, pass `artifactory_url` instead.
+
+Password encryption is off (`encrypt_password: false`). Turning it on sends the password to Artifactory's encryption API. Leave it off unless `url` points at a platform you trust.
+
+```yaml
+- jfrog-orb/configure:
+    server_id: deploy
+    url: ${JF_DEPLOY_URL}
+    access_token: ${JF_DEPLOY_TOKEN}
+    use: false
+```
+
+## Ping
+
+`ping` runs `jf rt ping`. With no `server_id`, it uses `JFROG_CLI_SERVER_ID` from `configure`, then whatever server `jf` has marked as the default.
+
+A successful ping means Artifactory answered. It does not prove permission to a repository. An anonymous Artifactory returns OK even when the token is wrong.
+
 ## Info for Security Teams
 
 ### Required external access
@@ -31,9 +74,16 @@ Hosts to allow if you run a locked-down, self-hosted CircleCI pipeline on-prem:
   - `releases-cdn.jfrog.io`: `releases.jfrog.io` answers every download with an HTTP 302 redirect to a signed URL on this CDN host, which serves the binary. Allowing `releases.jfrog.io` alone is not enough.
   - With `caching` enabled (the default), `install` also uses CircleCI's cache storage through the built-in `restore_cache` and `save_cache` steps. On CircleCI cloud with self-hosted runners, that requires outbound HTTPS to `circleci-tasks-prod.s3.us-east-1.amazonaws.com` (see the [runner FAQ](https://circleci.com/docs/guides/execution-runner/runner-faqs/#what-connectivity-is-required)). On CircleCI server, caches go to your installation's own object storage instead. Set `caching: false` to avoid cache traffic entirely.
   - Nothing else. In particular, `install` never runs `jf`, so none of the hosts below are contacted during installation.
-- **Running `jf` in your own steps** (the orb doesn't do this, but your firewall will see it):
+- **Configuring `jf`** (`configure`):
+  - With an access token, or with a password when `encrypt_password` is false (the default), this step does not contact the JFrog Platform. It writes the server profile under `~/.jfrog/`.
+  - `encrypt_password: true` sends the password in a `GET` to `<artifactory-url>/api/security/encryptedPassword`.
+  - `configure` sets `JFROG_CLI_AVOID_NEW_VERSION_WARNING=true` for that step only, so it does not call `api.github.com`.
+- **Pinging Artifactory** (`ping`):
+  - Contacts the configured Artifactory server (`jf rt ping`).
+  - Also sets `JFROG_CLI_AVOID_NEW_VERSION_WARNING=true` for that step only.
+- **Running `jf` in your own steps**:
   - The JFrog Platform or Artifactory URLs you configure `jf` to use.
-  - `api.github.com`: most `jf` commands check `https://api.github.com/repos/jfrog/jfrog-cli/releases/latest` for a newer CLI release. `jf` records the check in its home directory and repeats it every 6 hours, so on a fresh CI machine it happens once per job. If the check is blocked, `jf` prints a warning and carries on. Set `JFROG_CLI_AVOID_NEW_VERSION_WARNING=true` to turn it off.
+  - `api.github.com`: most `jf` commands check `https://api.github.com/repos/jfrog/jfrog-cli/releases/latest` for a newer CLI release. `jf` records the check in its home directory and repeats it every 6 hours, so on a fresh CI machine it happens once per job. If the check is blocked, `jf` prints a warning and carries on. Set `JFROG_CLI_AVOID_NEW_VERSION_WARNING=true` to turn it off. `configure` and `ping` set that variable for their own step; later steps do not inherit it.
 
 ## Upgrade Notes
 

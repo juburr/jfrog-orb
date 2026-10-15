@@ -27,6 +27,53 @@ jobs:
             # Bytes 18-19 of an ELF header are e_machine: 3e 00 is x86-64, b7 00 is aarch64.
             test "$(od -An -tx1 -j18 -N2 "$(command -v jf)" | tr -d ' \n')" = "3e00"
             jf --version
+      # Token mode does not contact JFrog. Ping is covered by test/ping_test.sh:
+      # a live ping needs an Artifactory that can answer, and a dead host can hang.
+      - jfrog-orb/configure:
+          url: https://example.jfrog.io
+          access_token: orb-configure-test-token
+      - run:
+          name: Verify configure saved a server profile
+          command: |
+            set -euo pipefail
+            show="$(jf config show jfrog-server)"
+            printf '%s\n' "$show" | grep -Eq '^Server ID:[[:space:]]+jfrog-server[[:space:]]*$'
+            printf '%s\n' "$show" | grep -Eq '^JFrog Platform URL:[[:space:]]+https://example\.jfrog\.io/'
+            printf '%s\n' "$show" | grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$'
+            grep -q 'JFROG_CLI_SERVER_ID=jfrog-server' "$BASH_ENV"
+            if printf '%s\n' "$show" | grep -qF orb-configure-test-token; then
+              echo "configure left the access token visible in jf config show"
+              exit 1
+            fi
+      - jfrog-orb/configure:
+          server_id: second-server
+          url: https://other.example.jfrog.io
+          access_token: orb-configure-test-token-2
+          use: false
+      - run:
+          name: Verify a second server does not replace the default
+          command: |
+            set -euo pipefail
+            jf config show jfrog-server | grep -Eq '^Default:[[:space:]]+true[[:space:]]*$'
+            jf config show second-server | grep -Eq '^Default:[[:space:]]+false[[:space:]]*$'
+            if grep -q second-server "$BASH_ENV"; then
+              echo "use: false wrote the second server id into BASH_ENV"
+              exit 1
+            fi
+      - jfrog-orb/install:
+          version: "2.70.0"
+      - jfrog-orb/configure:
+          url: https://example.jfrog.io
+          user: ci
+          access_token: orb-configure-test-token
+      - run:
+          name: Verify configure against jf 2.70.0
+          command: |
+            set -euo pipefail
+            jf --version | grep -F "2.70.0"
+            show="$(jf config show jfrog-server)"
+            printf '%s\n' "$show" | grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$'
+            printf '%s\n' "$show" | grep -Eq '^User:[[:space:]]+ci[[:space:]]*$'
 
   # Test install command on an arm64 machine: the arm64 asset, its checksum and an
   # architecture-specific cache key. Running jf alone wouldn't prove the architecture
@@ -49,6 +96,15 @@ jobs:
           command: |
             test "$(od -An -tx1 -j18 -N2 "$(command -v jf)" | tr -d ' \n')" = "b700"
             jf --version
+      - jfrog-orb/configure:
+          url: https://example.jfrog.io
+          access_token: orb-configure-test-token
+      - run:
+          name: Verify configure on arm64
+          command: |
+            set -euo pipefail
+            jf config show jfrog-server | grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$'
+            grep -q 'JFROG_CLI_SERVER_ID=jfrog-server' "$BASH_ENV"
       - jfrog-orb/install:
           version: "2.70.0"
       - run:
@@ -56,6 +112,14 @@ jobs:
           command: |
             test "$(od -An -tx1 -j18 -N2 "$(command -v jf)" | tr -d ' \n')" = "b700"
             jf --version | grep -F "2.70.0"
+      - jfrog-orb/configure:
+          url: https://example.jfrog.io
+          access_token: orb-configure-test-token
+      - run:
+          name: Verify configure against jf 2.70.0 on arm64
+          command: |
+            set -euo pipefail
+            jf config show jfrog-server | grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$'
 
 workflows:
   test-deploy:
