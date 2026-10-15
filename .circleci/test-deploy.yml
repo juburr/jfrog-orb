@@ -17,6 +17,10 @@ jobs:
   command-test:
     docker:
       - image: cimg/base:current
+    environment:
+      # Later jf steps in this job are not the configure command, so they would
+      # otherwise call api.github.com and print a new-version warning.
+      JFROG_CLI_AVOID_NEW_VERSION_WARNING: "true"
     steps:
       - checkout
       - jfrog-orb/install
@@ -36,12 +40,14 @@ jobs:
           name: Verify configure saved a server profile
           command: |
             set -euo pipefail
+            # Do not pipe jf into grep -q. grep -q exits at the first match, jf
+            # is killed with SIGPIPE, and pipefail turns that into exit 141.
             show="$(jf config show jfrog-server)"
-            printf '%s\n' "$show" | grep -Eq '^Server ID:[[:space:]]+jfrog-server[[:space:]]*$'
-            printf '%s\n' "$show" | grep -Eq '^JFrog Platform URL:[[:space:]]+https://example\.jfrog\.io/'
-            printf '%s\n' "$show" | grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$'
+            grep -Eq '^Server ID:[[:space:]]+jfrog-server[[:space:]]*$' <<< "$show"
+            grep -Eq '^JFrog Platform URL:[[:space:]]+https://example\.jfrog\.io/' <<< "$show"
+            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' <<< "$show"
             grep -q 'JFROG_CLI_SERVER_ID=jfrog-server' "$BASH_ENV"
-            if printf '%s\n' "$show" | grep -qF orb-configure-test-token; then
+            if grep -qF orb-configure-test-token <<< "$show"; then
               echo "configure left the access token visible in jf config show"
               exit 1
             fi
@@ -54,8 +60,10 @@ jobs:
           name: Verify a second server does not replace the default
           command: |
             set -euo pipefail
-            jf config show jfrog-server | grep -Eq '^Default:[[:space:]]+true[[:space:]]*$'
-            jf config show second-server | grep -Eq '^Default:[[:space:]]+false[[:space:]]*$'
+            show_first="$(jf config show jfrog-server)"
+            show_second="$(jf config show second-server)"
+            grep -Eq '^Default:[[:space:]]+true[[:space:]]*$' <<< "$show_first"
+            grep -Eq '^Default:[[:space:]]+false[[:space:]]*$' <<< "$show_second"
             if grep -q second-server "$BASH_ENV"; then
               echo "use: false wrote the second server id into BASH_ENV"
               exit 1
@@ -70,10 +78,11 @@ jobs:
           name: Verify configure against jf 2.70.0
           command: |
             set -euo pipefail
-            jf --version | grep -F "2.70.0"
+            version="$(jf --version)"
+            grep -F "2.70.0" <<< "$version"
             show="$(jf config show jfrog-server)"
-            printf '%s\n' "$show" | grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$'
-            printf '%s\n' "$show" | grep -Eq '^User:[[:space:]]+ci[[:space:]]*$'
+            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' <<< "$show"
+            grep -Eq '^User:[[:space:]]+ci[[:space:]]*$' <<< "$show"
 
   # Test install command on an arm64 machine: the arm64 asset, its checksum and an
   # architecture-specific cache key. Running jf alone wouldn't prove the architecture
@@ -82,6 +91,10 @@ jobs:
     machine:
       image: ubuntu-2404:current
     resource_class: arm.medium
+    environment:
+      # Later jf steps in this job are not the configure command, so they would
+      # otherwise call api.github.com and print a new-version warning.
+      JFROG_CLI_AVOID_NEW_VERSION_WARNING: "true"
     steps:
       - run:
           name: Prepare install path
@@ -103,7 +116,10 @@ jobs:
           name: Verify configure on arm64
           command: |
             set -euo pipefail
-            jf config show jfrog-server | grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$'
+            # Do not pipe jf into grep -q. grep -q exits at the first match, jf
+            # is killed with SIGPIPE, and pipefail turns that into exit 141.
+            show="$(jf config show jfrog-server)"
+            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' <<< "$show"
             grep -q 'JFROG_CLI_SERVER_ID=jfrog-server' "$BASH_ENV"
       - jfrog-orb/install:
           version: "2.70.0"
@@ -111,7 +127,8 @@ jobs:
           name: Verify the arm64 build of the oldest listed jf version was installed
           command: |
             test "$(od -An -tx1 -j18 -N2 "$(command -v jf)" | tr -d ' \n')" = "b700"
-            jf --version | grep -F "2.70.0"
+            version="$(jf --version)"
+            grep -F "2.70.0" <<< "$version"
       - jfrog-orb/configure:
           url: https://example.jfrog.io
           access_token: orb-configure-test-token
@@ -119,7 +136,8 @@ jobs:
           name: Verify configure against jf 2.70.0 on arm64
           command: |
             set -euo pipefail
-            jf config show jfrog-server | grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$'
+            show="$(jf config show jfrog-server)"
+            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' <<< "$show"
 
 workflows:
   test-deploy:
