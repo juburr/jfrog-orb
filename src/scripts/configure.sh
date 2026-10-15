@@ -88,24 +88,121 @@ require_http_url() {
     fi
 }
 
-# True when the saved password field is an HTML document rather than a ciphertext.
+# Read one JSON string whose opening quote was already consumed. The raw
+# contents stay escaped. `src` is the remainder of the document.
+json_string_raw() {
+    local -n src="$1"
+    local -n dest="$2"
+    local i=0 len c nxt
+    len=${#src}
+    dest=""
+    while (( i < len )); do
+        c="${src:i:1}"
+        if [[ "$c" == $'\\' ]]; then
+            nxt="${src:i+1:1}"
+            dest+="\\${nxt}"
+            i=$((i + 2))
+            continue
+        fi
+        if [[ "$c" == '"' ]]; then
+            src="${src:i+1}"
+            return 0
+        fi
+        dest+="$c"
+        i=$((i + 1))
+    done
+    return 1
+}
+
+json_unescape() {
+    local raw="$1" out="" i=0 len c nxt hex char bs=$'\\'
+    len=${#raw}
+    while (( i < len )); do
+        c="${raw:i:1}"
+        if [[ "$c" != $'\\' ]]; then
+            out+="$c"
+            i=$((i + 1))
+            continue
+        fi
+        nxt="${raw:i+1:1}"
+        case "$nxt" in
+            n) out+=$'\n' ;;
+            r) out+=$'\r' ;;
+            t) out+=$'\t' ;;
+            b) out+=$'\b' ;;
+            f) out+=$'\f' ;;
+            "$bs") out+=$'\\' ;;
+            '"') out+='"' ;;
+            /) out+='/' ;;
+            u)
+                hex="${raw:i+2:4}"
+                if [[ "$hex" =~ ^[0-9a-fA-F]{4}$ ]]; then
+                    printf -v char '%b' "\\u${hex}"
+                    out+="$char"
+                    i=$((i + 6))
+                    continue
+                fi
+                out+="\\u"
+                i=$((i + 2))
+                continue
+                ;;
+            *) out+="$nxt" ;;
+        esac
+        i=$((i + 2))
+    done
+    printf '%s' "$out"
+}
+
+# True when the decoded password, after leading whitespace and a BOM, is a
+# document. Go's encoding/json writes "<" as "\u003c", and a page can be stored
+# with a newline or BOM in front of that character.
+password_is_document() {
+    local value="$1" c
+    while [[ -n "$value" ]]; do
+        c="${value:0:1}"
+        case "$c" in
+            [[:space:]] | $'\ufeff' | $'\u00a0')
+                value="${value:1}"
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+    [[ "$value" == "<"* ]]
+}
+
+# True when a saved password field is an HTML document rather than a ciphertext.
 password_field_is_document() {
-    local contents needle
+    local contents rest value
     contents="$(<"$1")"
-    local needles=(
-        '"password": "\u003c'
-        '"password": "\u003C'
-        '"password": "<'
-        '"password":"\u003c'
-        '"password":"\u003C'
-        '"password":"<'
-    )
-    for needle in "${needles[@]}"; do
-        if [[ "$contents" == *"$needle"* ]]; then
+    rest="$contents"
+    while [[ "$rest" == *'"password"'* ]]; do
+        rest="${rest#*\"password\"}"
+        rest="${rest#"${rest%%[![:space:]]*}"}"
+        if [[ "$rest" != :* ]]; then
+            continue
+        fi
+        rest="${rest#:}"
+        rest="${rest#"${rest%%[![:space:]]*}"}"
+        if [[ "$rest" != '"'* ]]; then
+            continue
+        fi
+        rest="${rest#\"}"
+        value=""
+        json_string_raw rest value || return 1
+        if password_is_document "$(json_unescape "$value")"; then
             return 0
         fi
     done
     return 1
+}
+
+# jf config show masks a saved secret as "***". A decodable access token also
+# gets a subject suffix, for example: *** (Subject: 'jffe@000/users/ci').
+secret_is_masked() {
+    local value="$1"
+    [[ "$value" == "***" || "$value" == "*** "* ]]
 }
 
 # Value of one "Label: value" line from `jf config show`. Empty if absent.
@@ -129,6 +226,9 @@ URL="$(trim "$(subst "${PARAM_URL-}")")"
 ARTIFACTORY_URL="$(trim "$(subst "${PARAM_ARTIFACTORY_URL-}")")"
 CONFIG_USER="$(trim "$(subst "${PARAM_USER-}")")"
 ACCESS_TOKEN="$(trim "$(subst "${PARAM_ACCESS_TOKEN-}")")"
+# jf itself trims password stdin (checked on 2.70.0 and 2.125.0), so this trim
+# does not change what is stored. It does make a whitespace-only password fail
+# as missing credentials instead of being saved empty.
 PASSWORD="$(trim "$(subst "${PARAM_PASSWORD-}")")"
 OVERWRITE="$(trim "${PARAM_OVERWRITE-}")"
 INSECURE_TLS="$(trim "${PARAM_INSECURE_TLS-}")"
@@ -275,15 +375,14 @@ if [[ -z "$shown_platform" && -z "$shown_artifactory" ]]; then
     printf '%s\n' "$SHOW_OUT"
     exit 1
 fi
-if [[ "$shown_token" != "***" && "$shown_password" != "***" ]]; then
+if ! secret_is_masked "$shown_token" && ! secret_is_masked "$shown_password"; then
     echo "ERROR: jf saved server id '${SERVER_ID}' without an access token or password. jf config add exits 0 even when the saved profile has no credentials."
     printf '%s\n' "$SHOW_OUT"
     exit 1
 fi
 
 # Opt-in encryption calls GET /artifactory/api/security/encryptedPassword. If that
-# URL returns a web page, jf stores the page as the password and exits 0. Go's
-# JSON encoder writes a leading "<" as "\u003c".
+# URL returns a web page, jf stores the page as the password and exits 0.
 if [[ "$auth_mode" == "password" && "$ENCRYPT_PASSWORD" == "true" && -z "${JFROG_CLI_ENCRYPTION_KEY:-}" ]]; then
     config_home="${JFROG_CLI_HOME_DIR:-${HOME}/.jfrog}"
     config_file="${config_home}/jfrog-cli.conf.v6"

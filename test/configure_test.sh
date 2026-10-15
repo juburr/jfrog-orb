@@ -477,6 +477,17 @@ printf 'Server ID:\t\tjfrog-server\nJFrog Platform URL:\t\thttps://example.jfrog
 run_configure "tab-separated jf config show output is accepted" pass "Configured jf server 'jfrog-server'."
 
 set_defaults
+export JF_SHOW_FILE="${TMP}/show-subject.txt"
+printf "Server ID:\tjfrog-server\nJFrog Platform URL:\thttps://example.jfrog.io/\nUser:\tci\nAccess token:\t*** (Subject: 'jffe@000/users/ci')\nDefault:\ttrue\n" > "$JF_SHOW_FILE"
+run_configure "a masked token with a subject suffix is accepted" pass "Configured jf server 'jfrog-server'."
+assert_log_has "subject suffix still selects the server" "config use jfrog-server"
+
+set_defaults
+export JF_SHOW_FILE="${TMP}/show-unmasked.txt"
+printf 'Server ID: jfrog-server\nJFrog Platform URL: https://example.jfrog.io/\nAccess token: eyJhbGciOiJub25lIn0.payload.sig\n' > "$JF_SHOW_FILE"
+run_configure "an unmasked access token line fails" fail "without an access token or password"
+
+set_defaults
 export JF_SHOW_EXIT=1
 run_configure "config show failure fails the command" fail "jf config show failed"
 
@@ -554,6 +565,43 @@ export JF_SHOW_FILE="${TMP}/show-password.txt"
 printf '%s\n' '{"servers":[{"password": "\u003c!DOCTYPE html>","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
 run_configure "an encrypted password that is an HTML document fails" fail "stored a document instead of a ciphertext"
 assert_log_has "the bad profile is removed" "config rm jfrog-server"
+
+set_defaults
+export PARAM_ACCESS_TOKEN=
+export PARAM_USER=ci
+export PARAM_PASSWORD=password-secret-value
+export PARAM_ENCRYPT_PASSWORD=true
+export JF_SHOW_FILE="${TMP}/show-password.txt"
+# A page with a leading newline is stored as "\n\u003c" rather than "\u003c".
+printf '%s\n' '{"servers":[{"password": "\n\u003c!DOCTYPE html>","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+run_configure "HTML with a leading newline is rejected" fail "stored a document instead of a ciphertext"
+
+set_defaults
+export PARAM_ACCESS_TOKEN=
+export PARAM_USER=ci
+export PARAM_PASSWORD=password-secret-value
+export PARAM_ENCRYPT_PASSWORD=true
+export JF_SHOW_FILE="${TMP}/show-password.txt"
+printf '%s\n' '{"servers":[{"password": " \u003chtml>","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+run_configure "HTML with a leading space is rejected" fail "stored a document instead of a ciphertext"
+
+set_defaults
+export PARAM_ACCESS_TOKEN=
+export PARAM_USER=ci
+export PARAM_PASSWORD=password-secret-value
+export PARAM_ENCRYPT_PASSWORD=true
+export JF_SHOW_FILE="${TMP}/show-password.txt"
+printf '%s\n' '{"servers":[{"password": "\ufeff\u003c!DOCTYPE html>","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+run_configure "HTML with a leading BOM is rejected" fail "stored a document instead of a ciphertext"
+
+set_defaults
+export PARAM_ACCESS_TOKEN=
+export PARAM_USER=ci
+export PARAM_PASSWORD=password-secret-value
+export PARAM_ENCRYPT_PASSWORD=true
+export JF_SHOW_FILE="${TMP}/show-password.txt"
+printf '%s\n' '{"servers":[{"password": "AM6\u003cstill-ciphertext","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+run_configure "a ciphertext that contains an encoded less-than is kept" pass "Configured jf server 'jfrog-server'."
 
 if [[ "$(yaml_default server_id)" == "jfrog-server" ]]; then
   ok "command default server_id is jfrog-server"
@@ -723,6 +771,39 @@ PY
       ok "real $(basename "$jf_bin") use false keeps the first server default"
     else
       bad "real $(basename "$jf_bin") use false keeps the first server default" "defaults did not match"
+    fi
+
+    mkdir -p "${home}-jwt"
+    jwt="$(python3 - << 'PY'
+import base64, json
+def b64(obj):
+    raw = json.dumps(obj, separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+print(b64({"alg": "none", "typ": "JWT"}) + "." + b64({"sub": "jffe@000/users/ci"}) + ".sig")
+PY
+)"
+    set +e
+    real_configure "$work" "${work}/jwt.out" \
+      PATH="$real_dir" \
+      BASH_ENV="$bash_env" \
+      JFROG_CLI_HOME_DIR="${home}-jwt" \
+      PARAM_SERVER_ID=jwt-server \
+      PARAM_URL=https://example.jfrog.io \
+      PARAM_ARTIFACTORY_URL="" \
+      PARAM_ACCESS_TOKEN="$jwt" \
+      PARAM_USER="" \
+      PARAM_PASSWORD="" \
+      PARAM_OVERWRITE=true \
+      PARAM_INSECURE_TLS=false \
+      PARAM_ENCRYPT_PASSWORD=false \
+      PARAM_USE=false
+    jwt_status=$?
+    set -e
+    if [[ "$jwt_status" -eq 0 ]] && grep -qF "Configured jf server 'jwt-server'." "${work}/jwt.out"; then
+      ok "real $(basename "$jf_bin") accepts a token config show marks with a subject"
+    else
+      bad "real $(basename "$jf_bin") accepts a token config show marks with a subject" "exit ${jwt_status}"
+      sed 's/^/    /' "${work}/jwt.out"
     fi
 
     mkdir -p "${home}-enc"
