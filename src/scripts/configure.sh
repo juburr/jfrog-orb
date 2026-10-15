@@ -57,17 +57,18 @@ redact_url() {
 
 # CircleCI writes a boolean parameter into the step environment as 1 or 0.
 # jf flags and the comparisons below need the words true and false.
+# printf -v assigns by name without `local -n`, which Bash 4.2 does not have.
 normalize_bool() {
-    local name="$1"
-    local -n dest="$2"
-    case "$dest" in
-        true | TRUE | True | 1) dest=true ;;
-        false | FALSE | False | 0) dest=false ;;
+    local name="$1" value="$2" dest="$3" normalized
+    case "$value" in
+        true | TRUE | True | 1) normalized=true ;;
+        false | FALSE | False | 0) normalized=false ;;
         *)
-            echo "ERROR: ${name} must be true or false, not '${dest}'."
+            echo "ERROR: ${name} must be true or false, not '${value}'."
             exit 1
             ;;
     esac
+    printf -v "$dest" '%s' "$normalized"
 }
 
 require_http_url() {
@@ -86,32 +87,6 @@ require_http_url() {
         echo "ERROR: ${name} must not contain tabs or newlines."
         exit 1
     fi
-}
-
-# Read one JSON string whose opening quote was already consumed. The raw
-# contents stay escaped. `src` is the remainder of the document.
-json_string_raw() {
-    local -n src="$1"
-    local -n dest="$2"
-    local i=0 len c nxt
-    len=${#src}
-    dest=""
-    while (( i < len )); do
-        c="${src:i:1}"
-        if [[ "$c" == $'\\' ]]; then
-            nxt="${src:i+1:1}"
-            dest+="\\${nxt}"
-            i=$((i + 2))
-            continue
-        fi
-        if [[ "$c" == '"' ]]; then
-            src="${src:i+1}"
-            return 0
-        fi
-        dest+="$c"
-        i=$((i + 1))
-    done
-    return 1
 }
 
 json_unescape() {
@@ -172,28 +147,85 @@ password_is_document() {
     [[ "$value" == "<"* ]]
 }
 
-# True when a saved password field is an HTML document rather than a ciphertext.
-password_field_is_document() {
-    local contents rest value
-    contents="$(<"$1")"
-    rest="$contents"
-    while [[ "$rest" == *'"password"'* ]]; do
-        rest="${rest#*\"password\"}"
-        rest="${rest#"${rest%%[![:space:]]*}"}"
-        if [[ "$rest" != :* ]]; then
+# Print the unescaped password stored for want_id. Other servers in the same
+# document are ignored. Returns 1 when that server has no password field.
+saved_password_for_server() {
+    local json="$1" want="$2"
+    local i=0 len=${#json} c depth=0 in_str=0 esc=0
+    local buf="" mode="seek" key="" decoded_id
+    local -a got_id got_pw seen_pw
+    while (( i < len )); do
+        c="${json:i:1}"
+        if (( in_str )); then
+            if (( esc )); then
+                buf+="$c"
+                esc=0
+            elif [[ "$c" == $'\\' ]]; then
+                buf+="$c"
+                esc=1
+            elif [[ "$c" == '"' ]]; then
+                in_str=0
+                if [[ "$mode" == "key" ]]; then
+                    key="$buf"
+                    mode="colon"
+                elif [[ "$mode" == "value" ]]; then
+                    if [[ "$key" == "password" ]]; then
+                        got_pw[depth]="$buf"
+                        seen_pw[depth]=1
+                    elif [[ "$key" == "serverId" ]]; then
+                        got_id[depth]="$buf"
+                    fi
+                    key=""
+                    mode="seek"
+                fi
+                buf=""
+            else
+                buf+="$c"
+            fi
+            i=$((i + 1))
             continue
         fi
-        rest="${rest#:}"
-        rest="${rest#"${rest%%[![:space:]]*}"}"
-        if [[ "$rest" != '"'* ]]; then
-            continue
-        fi
-        rest="${rest#\"}"
-        value=""
-        json_string_raw rest value || return 1
-        if password_is_document "$(json_unescape "$value")"; then
-            return 0
-        fi
+        case "$c" in
+            '"')
+                in_str=1
+                buf=""
+                if [[ "$mode" == "seek" ]]; then
+                    mode="key"
+                fi
+                ;;
+            '{')
+                depth=$((depth + 1))
+                got_id[depth]=""
+                got_pw[depth]=""
+                seen_pw[depth]=0
+                mode="seek"
+                key=""
+                ;;
+            '}')
+                if (( depth > 0 )) && [[ "${seen_pw[depth]:-0}" == 1 ]]; then
+                    decoded_id="$(json_unescape "${got_id[depth]}")"
+                    if [[ "$decoded_id" == "$want" ]]; then
+                        json_unescape "${got_pw[depth]}"
+                        return 0
+                    fi
+                fi
+                if (( depth > 0 )); then
+                    depth=$((depth - 1))
+                fi
+                mode="seek"
+                key=""
+                ;;
+            ':')
+                if [[ "$mode" == "colon" ]]; then
+                    mode="value"
+                fi
+                ;;
+            ',')
+                mode="seek"
+                key=""
+                ;;
+        esac
+        i=$((i + 1))
     done
     return 1
 }
@@ -240,10 +272,10 @@ USE_SERVER="$(trim "${PARAM_USE-}")"
 # above are not exported.
 unset PARAM_ACCESS_TOKEN PARAM_PASSWORD
 
-normalize_bool overwrite OVERWRITE
-normalize_bool insecure_tls INSECURE_TLS
-normalize_bool encrypt_password ENCRYPT_PASSWORD
-normalize_bool use USE_SERVER
+normalize_bool overwrite "$OVERWRITE" OVERWRITE
+normalize_bool insecure_tls "$INSECURE_TLS" INSECURE_TLS
+normalize_bool encrypt_password "$ENCRYPT_PASSWORD" ENCRYPT_PASSWORD
+normalize_bool use "$USE_SERVER" USE_SERVER
 
 if [[ -z "$SERVER_ID" ]]; then
     echo "ERROR: server_id is empty."
@@ -383,14 +415,54 @@ fi
 
 # Opt-in encryption calls GET /artifactory/api/security/encryptedPassword. If that
 # URL returns a web page, jf stores the page as the password and exits 0.
-if [[ "$auth_mode" == "password" && "$ENCRYPT_PASSWORD" == "true" && -z "${JFROG_CLI_ENCRYPTION_KEY:-}" ]]; then
-    config_home="${JFROG_CLI_HOME_DIR:-${HOME}/.jfrog}"
-    config_file="${config_home}/jfrog-cli.conf.v6"
-    if [[ -f "$config_file" ]] && password_field_is_document "$config_file"; then
+# `jf config export` returns that password in the clear even when
+# JFROG_CLI_ENCRYPTION_KEY or security/security.yaml has encrypted the file.
+if [[ "$auth_mode" == "password" && "$ENCRYPT_PASSWORD" == "true" ]]; then
+    if ! command -v base64 >/dev/null 2>&1; then
+        jf config rm "$SERVER_ID" --quiet || true
+        echo "ERROR: Password encryption could not be checked because base64 is not on PATH. The server profile was removed."
+        exit 1
+    fi
+    export_token="$(jf config export "$SERVER_ID")" || {
+        jf config rm "$SERVER_ID" --quiet || true
+        echo "ERROR: Could not read the saved password back to verify encryption. The server profile was removed."
+        exit 1
+    }
+    export_token="${export_token//$'\n'/}"
+    export_token="${export_token//$'\r'/}"
+    export_token="${export_token//-/+}"
+    export_token="${export_token//_//}"
+    case $((${#export_token} % 4)) in
+        2) export_token+='==' ;;
+        3) export_token+='=' ;;
+        1)
+            unset export_token
+            jf config rm "$SERVER_ID" --quiet || true
+            echo "ERROR: Could not read the saved password back to verify encryption. The server profile was removed."
+            exit 1
+            ;;
+    esac
+    if ! decoded="$(printf '%s' "$export_token" | base64 -d 2>/dev/null)"; then
+        unset export_token decoded
+        jf config rm "$SERVER_ID" --quiet || true
+        echo "ERROR: Could not read the saved password back to verify encryption. The server profile was removed."
+        exit 1
+    fi
+    unset export_token
+    if ! saved_password="$(saved_password_for_server "$decoded" "$SERVER_ID")"; then
+        unset decoded saved_password
+        jf config rm "$SERVER_ID" --quiet || true
+        echo "ERROR: Could not read the saved password for server id '${SERVER_ID}'. The server profile was removed."
+        exit 1
+    fi
+    unset decoded
+    if password_is_document "$saved_password"; then
+        unset saved_password
         jf config rm "$SERVER_ID" --quiet || true
         echo "ERROR: Password encryption stored a document instead of a ciphertext. The Artifactory encryption endpoint returned a page that is not an encrypted password. Leave encrypt_password false, or point url at the JFrog Platform."
         exit 1
     fi
+    unset saved_password
 fi
 
 if [[ "$USE_SERVER" == "true" ]]; then

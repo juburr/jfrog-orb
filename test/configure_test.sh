@@ -36,6 +36,9 @@ mkdir -p "$BIN" "$BIN_NO_JF" "$BIN_NO_CIRCLECI"
 ln -s "$(command -v cat)" "${BIN}/cat"
 ln -s "$(command -v cat)" "${BIN_NO_JF}/cat"
 ln -s "$(command -v cat)" "${BIN_NO_CIRCLECI}/cat"
+ln -s "$(command -v base64)" "${BIN}/base64"
+ln -s "$(command -v base64)" "${BIN_NO_JF}/base64"
+ln -s "$(command -v base64)" "${BIN_NO_CIRCLECI}/base64"
 
 # Expand ${VAR} and $VAR the way `circleci env subst` does, including unset vars.
 cat > "${BIN}/circleci" << 'EOF'
@@ -124,6 +127,16 @@ fi
 if [[ "${1:-}" == "config" && "${2:-}" == "rm" ]]; then
   exit 0
 fi
+if [[ "${1:-}" == "config" && "${2:-}" == "export" ]]; then
+  if [[ -n "${JF_EXPORT_FILE:-}" ]]; then
+    base64 -w 0 "$JF_EXPORT_FILE"
+    printf '\n'
+    exit 0
+  fi
+  printf '%s' "{\"password\":\"ciphertext\",\"serverId\":\"${3:-}\"}" | base64 -w 0
+  printf '\n'
+  exit 0
+fi
 echo "unexpected jf command: $*" >&2
 exit 1
 EOF
@@ -162,7 +175,7 @@ set_defaults() {
   export JFROG_CLI_HOME_DIR="${TMP}/jfrog-home"
   mkdir -p "$JFROG_CLI_HOME_DIR"
   rm -f "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
-  unset PATH_MODE UNSET_BASH_ENV JF_SHOW_FILE JF_URL JF_ACCESS_TOKEN JF_USER JF_PASSWORD
+  unset PATH_MODE UNSET_BASH_ENV JF_SHOW_FILE JF_EXPORT_FILE JF_URL JF_ACCESS_TOKEN JF_USER JF_PASSWORD
   unset JFROG_CLI_ENCRYPTION_KEY
 }
 
@@ -551,9 +564,11 @@ export PARAM_USER=ci
 export PARAM_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
-printf '%s\n' '{"servers":[{"password": "ciphertext","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+export JF_EXPORT_FILE="${TMP}/export-ciphertext.json"
+printf '%s\n' '{"password":"ciphertext","serverId":"jfrog-server"}' > "$JF_EXPORT_FILE"
 run_configure "encrypt_password true is passed to jf" pass "Configured jf server 'jfrog-server'."
 assert_log_has "encryption flag is true" "--enc-password=true"
+assert_log_has "saved password is read back with config export" "config export jfrog-server"
 
 set_defaults
 export PARAM_ACCESS_TOKEN=
@@ -561,8 +576,9 @@ export PARAM_USER=ci
 export PARAM_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
+export JF_EXPORT_FILE="${TMP}/export-html.json"
 # Go's encoding/json writes "<" as "\u003c". Keep the backslash literal.
-printf '%s\n' '{"servers":[{"password": "\u003c!DOCTYPE html>","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+printf '%s\n' '{"password":"\u003c!DOCTYPE html>","serverId":"jfrog-server"}' > "$JF_EXPORT_FILE"
 run_configure "an encrypted password that is an HTML document fails" fail "stored a document instead of a ciphertext"
 assert_log_has "the bad profile is removed" "config rm jfrog-server"
 
@@ -571,9 +587,21 @@ export PARAM_ACCESS_TOKEN=
 export PARAM_USER=ci
 export PARAM_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
+export JFROG_CLI_ENCRYPTION_KEY=00112233445566778899aabbccddeeff
 export JF_SHOW_FILE="${TMP}/show-password.txt"
+export JF_EXPORT_FILE="${TMP}/export-html-encrypted-home.json"
+printf '%s\n' '{"password":"\u003c!DOCTYPE html>","serverId":"jfrog-server"}' > "$JF_EXPORT_FILE"
+run_configure "HTML is rejected when the CLI encryption key is set" fail "stored a document instead of a ciphertext"
+
+set_defaults
+export PARAM_ACCESS_TOKEN=
+export PARAM_USER=ci
+export PARAM_PASSWORD=password-secret-value
+export PARAM_ENCRYPT_PASSWORD=true
+export JF_SHOW_FILE="${TMP}/show-password.txt"
+export JF_EXPORT_FILE="${TMP}/export-html-newline.json"
 # A page with a leading newline is stored as "\n\u003c" rather than "\u003c".
-printf '%s\n' '{"servers":[{"password": "\n\u003c!DOCTYPE html>","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+printf '%s\n' '{"password":"\n\u003c!DOCTYPE html>","serverId":"jfrog-server"}' > "$JF_EXPORT_FILE"
 run_configure "HTML with a leading newline is rejected" fail "stored a document instead of a ciphertext"
 
 set_defaults
@@ -582,7 +610,8 @@ export PARAM_USER=ci
 export PARAM_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
-printf '%s\n' '{"servers":[{"password": " \u003chtml>","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+export JF_EXPORT_FILE="${TMP}/export-html-space.json"
+printf '%s\n' '{"password":" \u003chtml>","serverId":"jfrog-server"}' > "$JF_EXPORT_FILE"
 run_configure "HTML with a leading space is rejected" fail "stored a document instead of a ciphertext"
 
 set_defaults
@@ -591,7 +620,8 @@ export PARAM_USER=ci
 export PARAM_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
-printf '%s\n' '{"servers":[{"password": "\ufeff\u003c!DOCTYPE html>","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+export JF_EXPORT_FILE="${TMP}/export-html-bom.json"
+printf '%s\n' '{"password":"\ufeff\u003c!DOCTYPE html>","serverId":"jfrog-server"}' > "$JF_EXPORT_FILE"
 run_configure "HTML with a leading BOM is rejected" fail "stored a document instead of a ciphertext"
 
 set_defaults
@@ -600,8 +630,30 @@ export PARAM_USER=ci
 export PARAM_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
-printf '%s\n' '{"servers":[{"password": "AM6\u003cstill-ciphertext","serverId": "jfrog-server"}]}' > "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
+export JF_EXPORT_FILE="${TMP}/export-ciphertext-lt.json"
+printf '%s\n' '{"password":"AM6\u003cstill-ciphertext","serverId":"jfrog-server"}' > "$JF_EXPORT_FILE"
 run_configure "a ciphertext that contains an encoded less-than is kept" pass "Configured jf server 'jfrog-server'."
+
+set_defaults
+export PARAM_ACCESS_TOKEN=
+export PARAM_USER=ci
+export PARAM_PASSWORD=password-secret-value
+export PARAM_ENCRYPT_PASSWORD=true
+export JF_SHOW_FILE="${TMP}/show-password.txt"
+export JF_EXPORT_FILE="${TMP}/export-other-server-html.json"
+# A different server's unencrypted password may start with "<". Only this server counts.
+printf '%s\n' '{"servers":[{"password":"\u003csecret","serverId":"other"},{"password":"ciphertext","serverId":"jfrog-server"}]}' > "$JF_EXPORT_FILE"
+run_configure "another server's password is not treated as this server's" pass "Configured jf server 'jfrog-server'."
+
+set_defaults
+export PARAM_ACCESS_TOKEN=
+export PARAM_USER=ci
+export PARAM_PASSWORD=password-secret-value
+export PARAM_ENCRYPT_PASSWORD=true
+export JF_SHOW_FILE="${TMP}/show-password.txt"
+export JF_EXPORT_FILE="${TMP}/export-this-server-html.json"
+printf '%s\n' '{"servers":[{"password":"ciphertext","serverId":"other"},{"password":"\u003chtml>","serverId":"jfrog-server"}]}' > "$JF_EXPORT_FILE"
+run_configure "this server's HTML password is rejected beside another server" fail "stored a document instead of a ciphertext"
 
 if [[ "$(yaml_default server_id)" == "jfrog-server" ]]; then
   ok "command default server_id is jfrog-server"

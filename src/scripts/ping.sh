@@ -26,24 +26,25 @@ trim() {
 
 # CircleCI writes a boolean parameter into the step environment as 1 or 0.
 # The insecure-tls flag below needs the word true.
+# printf -v assigns by name without `local -n`, which Bash 4.2 does not have.
 normalize_bool() {
-    local name="$1"
-    local -n dest="$2"
-    case "$dest" in
-        true | TRUE | True | 1) dest=true ;;
-        false | FALSE | False | 0) dest=false ;;
+    local name="$1" value="$2" dest="$3" normalized
+    case "$value" in
+        true | TRUE | True | 1) normalized=true ;;
+        false | FALSE | False | 0) normalized=false ;;
         *)
-            echo "ERROR: ${name} must be true or false, not '${dest}'."
+            echo "ERROR: ${name} must be true or false, not '${value}'."
             exit 1
             ;;
     esac
+    printf -v "$dest" '%s' "$normalized"
 }
 
 # Pipe the value on stdin. `circleci env subst` with no argument reads stdin;
 # an empty argument is not a reliable way to expand an empty parameter.
 SERVER_ID="$(trim "$(printf '%s' "${PARAM_SERVER_ID-}" | circleci env subst)")"
 INSECURE_TLS="$(trim "${PARAM_INSECURE_TLS-}")"
-normalize_bool insecure_tls INSECURE_TLS
+normalize_bool insecure_tls "$INSECURE_TLS" INSECURE_TLS
 
 # An empty server_id follows the id configure exported, then jf's default server.
 if [[ -z "$SERVER_ID" && -n "${JFROG_CLI_SERVER_ID:-}" ]]; then
