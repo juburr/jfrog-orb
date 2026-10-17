@@ -49,7 +49,7 @@ When you want `jf` to talk to JFrog, `configure` writes a server profile from `J
     </td>
     <td width="33%" valign="top">
       <h3>⚡ Cached</h3>
-      The binary is stored in the CircleCI cache, keyed by version and architecture, so later runs skip the download.
+      The binary is stored in the CircleCI cache, keyed by version, architecture and home directory, so later runs skip the download.
     </td>
   </tr>
   <tr>
