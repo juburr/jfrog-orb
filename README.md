@@ -59,7 +59,7 @@ When you want `jf` to talk to JFrog, `configure` writes a server profile from `J
     </td>
     <td width="33%" valign="top">
       <h3>🔓 No root needed</h3>
-      Installs to <code>/home/circleci/bin</code> by default, which is already on <code>PATH</code> in CircleCI convenience images.
+      Installs to <code>$HOME/bin</code> by default, creating it and adding it to <code>PATH</code> when it isn't already there.
     </td>
     <td width="33%" valign="top">
       <h3>🧱 Firewall friendly</h3>
@@ -137,7 +137,7 @@ workflows:
 <details>
 <summary><b>Run on an arm64 machine</b></summary>
 
-No extra parameters. The orb sees `aarch64` and installs `jfrog-cli-linux-arm64`, verified against its own checksum. On `machine` executors, `/home/circleci/bin` may not exist yet, so create it and add it to `PATH` first:
+No extra parameters. The orb sees `aarch64` and installs `jfrog-cli-linux-arm64`, verified against its own checksum, creating `install_path` and adding it to `PATH` if the machine image doesn't have it:
 
 ```yaml
 jobs:
@@ -146,11 +146,6 @@ jobs:
       image: ubuntu-2404:current
     resource_class: arm.medium
     steps:
-      - run:
-          name: Prepare install path
-          command: |
-            mkdir -p /home/circleci/bin
-            echo 'export PATH="/home/circleci/bin:${PATH}"' >> "${BASH_ENV}"
       - jfrog-orb/install
       - run: jf --version
 ```
@@ -163,7 +158,7 @@ jobs:
 ```yaml
 steps:
   - jfrog-orb/install:
-      install_path: /home/circleci/.local/bin  # must exist and be writable, no trailing slash
+      install_path: /home/circleci/.local/bin  # absolute, created if needed, must be writable
       caching: false                           # always download, never touch the CircleCI cache
 ```
 
@@ -211,7 +206,7 @@ The orb has three commands: `install`, `configure`, and `ping`.
 | --- | --- | --- | --- |
 | `version` | string | `2.125.0` | The `jf` version to install. |
 | `verify_checksums` | enum | `strict` | `strict`, `known_versions`, or `"false"`. See [Checksum verification](#-checksum-verification). |
-| `install_path` | string | `/home/circleci/bin` | Directory to install `jf` into. Pick one that doesn't need root, with no trailing slash. |
+| `install_path` | string | `$HOME/bin` | Absolute directory to install `jf` into, created if needed and added to `PATH` when it isn't already there. Pick one that doesn't need root. |
 | `caching` | boolean | `true` | Restore and save the `jf` binary with the CircleCI cache. |
 
 ### `configure`

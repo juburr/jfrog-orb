@@ -96,11 +96,11 @@ jobs:
       # otherwise call api.github.com and print a new-version warning.
       JFROG_CLI_AVOID_NEW_VERSION_WARNING: "true"
     steps:
+      # install creates install_path and adds it to the PATH of later steps,
+      # so the machine executor needs no preparation for it.
       - run:
-          name: Prepare install path
+          name: Check the machine architecture
           command: |
-            mkdir -p /home/circleci/bin
-            echo 'export PATH="/home/circleci/bin:${PATH}"' >> "${BASH_ENV}"
             echo "uname -m: $(uname -m)"
             test "$(uname -m)" = "aarch64"
       - jfrog-orb/install
