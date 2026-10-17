@@ -43,11 +43,11 @@ jobs:
             # Do not pipe jf into grep -q. grep -q exits at the first match, jf
             # is killed with SIGPIPE, and pipefail turns that into exit 141.
             show="$(jf config show jfrog-server)"
-            grep -Eq '^Server ID:[[:space:]]+jfrog-server[[:space:]]*$' <<< "$show"
-            grep -Eq '^JFrog Platform URL:[[:space:]]+https://example\.jfrog\.io/' <<< "$show"
-            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' <<< "$show"
+            grep -Eq '^Server ID:[[:space:]]+jfrog-server[[:space:]]*$' \<<< "$show"
+            grep -Eq '^JFrog Platform URL:[[:space:]]+https://example\.jfrog\.io/' \<<< "$show"
+            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' \<<< "$show"
             grep -q 'JFROG_CLI_SERVER_ID=jfrog-server' "$BASH_ENV"
-            if grep -qF orb-configure-test-token <<< "$show"; then
+            if grep -qF orb-configure-test-token \<<< "$show"; then
               echo "configure left the access token visible in jf config show"
               exit 1
             fi
@@ -62,8 +62,8 @@ jobs:
             set -euo pipefail
             show_first="$(jf config show jfrog-server)"
             show_second="$(jf config show second-server)"
-            grep -Eq '^Default:[[:space:]]+true[[:space:]]*$' <<< "$show_first"
-            grep -Eq '^Default:[[:space:]]+false[[:space:]]*$' <<< "$show_second"
+            grep -Eq '^Default:[[:space:]]+true[[:space:]]*$' \<<< "$show_first"
+            grep -Eq '^Default:[[:space:]]+false[[:space:]]*$' \<<< "$show_second"
             if grep -q second-server "$BASH_ENV"; then
               echo "use: false wrote the second server id into BASH_ENV"
               exit 1
@@ -79,10 +79,10 @@ jobs:
           command: |
             set -euo pipefail
             version="$(jf --version)"
-            grep -F "2.70.0" <<< "$version"
+            grep -F "2.70.0" \<<< "$version"
             show="$(jf config show jfrog-server)"
-            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' <<< "$show"
-            grep -Eq '^User:[[:space:]]+ci[[:space:]]*$' <<< "$show"
+            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' \<<< "$show"
+            grep -Eq '^User:[[:space:]]+ci[[:space:]]*$' \<<< "$show"
 
   # Test install command on an arm64 machine: the arm64 asset, its checksum and an
   # architecture-specific cache key. Running jf alone wouldn't prove the architecture
@@ -96,11 +96,11 @@ jobs:
       # otherwise call api.github.com and print a new-version warning.
       JFROG_CLI_AVOID_NEW_VERSION_WARNING: "true"
     steps:
+      # install creates install_path and adds it to the PATH of later steps,
+      # so the machine executor needs no preparation for it.
       - run:
-          name: Prepare install path
+          name: Check the machine architecture
           command: |
-            mkdir -p /home/circleci/bin
-            echo 'export PATH="/home/circleci/bin:${PATH}"' >> "${BASH_ENV}"
             echo "uname -m: $(uname -m)"
             test "$(uname -m)" = "aarch64"
       - jfrog-orb/install
@@ -119,7 +119,7 @@ jobs:
             # Do not pipe jf into grep -q. grep -q exits at the first match, jf
             # is killed with SIGPIPE, and pipefail turns that into exit 141.
             show="$(jf config show jfrog-server)"
-            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' <<< "$show"
+            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' \<<< "$show"
             grep -q 'JFROG_CLI_SERVER_ID=jfrog-server' "$BASH_ENV"
       - jfrog-orb/install:
           version: "2.70.0"
@@ -128,7 +128,7 @@ jobs:
           command: |
             test "$(od -An -tx1 -j18 -N2 "$(command -v jf)" | tr -d ' \n')" = "b700"
             version="$(jf --version)"
-            grep -F "2.70.0" <<< "$version"
+            grep -F "2.70.0" \<<< "$version"
       - jfrog-orb/configure:
           url: https://example.jfrog.io
           access_token: orb-configure-test-token
@@ -137,7 +137,7 @@ jobs:
           command: |
             set -euo pipefail
             show="$(jf config show jfrog-server)"
-            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' <<< "$show"
+            grep -Eq '^Access token:[[:space:]]+\*\*\*[[:space:]]*$' \<<< "$show"
 
 workflows:
   test-deploy:
