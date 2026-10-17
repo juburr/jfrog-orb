@@ -277,7 +277,7 @@ Hosts to allow if you run a locked-down, self-hosted CircleCI pipeline on-prem:
   - `releases.jfrog.io`: `jf` release downloads, from `https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/<version>/jfrog-cli-linux-<arch>/jf`.
   - `releases-cdn.jfrog.io`: `releases.jfrog.io` answers every download with an HTTP 302 redirect to a signed URL on this CDN host, which serves the binary. Allowing `releases.jfrog.io` alone is not enough.
   - With `caching` enabled (the default), `install` also uses CircleCI's cache storage through the built-in `restore_cache` and `save_cache` steps. On CircleCI cloud with self-hosted runners, that requires outbound HTTPS to `circleci-tasks-prod.s3.us-east-1.amazonaws.com` (see the [runner FAQ](https://circleci.com/docs/guides/execution-runner/runner-faqs/#what-connectivity-is-required)). On CircleCI server, caches go to your installation's own object storage instead. Set `caching: false` to avoid cache traffic entirely.
-  - Nothing else. In particular, `install` never runs `jf`, so none of the hosts below are contacted during installation.
+  - Nothing else. `install` runs the installed `jf --version` once, with `JFROG_CLI_AVOID_NEW_VERSION_WARNING=true`, to check that the binary works on the machine. That command makes no network requests, so none of the hosts below are contacted during installation.
 - **Configuring `jf`** (`configure`):
   - With an access token, or with a password when `encrypt_password` is false (the default), this step does not contact the JFrog Platform. It writes the server profile under `~/.jfrog/`.
   - `encrypt_password: true` sends the password in a `GET` to `<artifactory-url>/api/security/encryptedPassword`.
