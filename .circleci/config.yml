@@ -23,6 +23,9 @@ jobs:
       - run:
           name: Run ping command tests
           command: bash test/ping_test.sh
+      - run:
+          name: Run circleci env subst tests
+          command: bash test/env_subst_test.sh
 
 workflows:
   lint-pack:

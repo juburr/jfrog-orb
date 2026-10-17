@@ -6,10 +6,10 @@ set +o history
 # Ensure CircleCI environment variables can be passed in as orb parameters
 CLI_OS="linux"
 CLI_MAJOR_VER="v2-jf"
-INSTALL_PATH=$(circleci env subst "${PARAM_INSTALL_PATH}")
+INSTALL_PATH=$(printf '%s' "${PARAM_INSTALL_PATH}" | circleci env subst)
 # Fail closed: only an explicit opt-out installs a version the table doesn't list.
 VERIFY_CHECKSUMS="${PARAM_VERIFY_CHECKSUMS:-strict}"
-VERSION=$(circleci env subst "${PARAM_VERSION}")
+VERSION=$(printf '%s' "${PARAM_VERSION}" | circleci env subst)
 
 # Pick the release asset for this machine. JFrog publishes Linux builds of jf for
 # both architectures; anything else is an error rather than a wrong binary.
