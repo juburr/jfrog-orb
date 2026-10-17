@@ -47,11 +47,13 @@ if [[ "${1:-}" != "env" || "${2:-}" != "subst" ]]; then
   echo "unexpected circleci invocation" >&2
   exit 1
 fi
-if [[ $# -ge 3 ]]; then
-  input="$3"
-else
-  input="$(cat)"
+# The scripts pass values on stdin; as an argument, one starting with "-"
+# would be parsed as a flag by the real CLI.
+if [[ $# -gt 2 ]]; then
+  echo "circleci env subst: value passed as an argument" >&2
+  exit 1
 fi
+input="$(cat)"
 out=""
 i=0
 len=${#input}
