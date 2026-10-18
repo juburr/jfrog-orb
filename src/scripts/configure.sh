@@ -81,6 +81,12 @@ require_env_var_name() {
         echo "ERROR: ${name} must be the name of an environment variable, not '${value}'."
         exit 1
     fi
+    # The step sets PARAM_* to this command's parameter values, replacing any
+    # variable of the same name before this script can read it.
+    if [[ "$value" == PARAM_* ]]; then
+        echo "ERROR: ${name} names ${value}, but PARAM_* variables are reserved for this command's parameters. Store the secret under another name."
+        exit 1
+    fi
 }
 
 require_http_url() {

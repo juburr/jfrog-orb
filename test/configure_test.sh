@@ -590,6 +590,17 @@ for bad_name in '${JF_ACCESS_TOKEN}' 'JF ACCESS TOKEN' '1TOKEN' ''; do
   run_configure "access_token '${bad_name}' is not a variable name" fail "access_token must be the name of an environment variable"
   assert_not_called "access_token '${bad_name}' does not call jf"
 done
+# The step's environment sets PARAM_<NAME> to the parameter value, so a
+# credential variable with that name is replaced by its own name.
+for param in ACCESS_TOKEN USERNAME PASSWORD; do
+  set_defaults
+  export "PARAM_${param}=PARAM_${param}"
+  run_configure "a credential variable named PARAM_${param} is refused" fail "PARAM_* variables are reserved"
+  assert_not_called "PARAM_${param} as a credential name does not call jf"
+done
+set_defaults
+export PARAM_ACCESS_TOKEN=PARAM_URL
+run_configure "access_token naming another parameter variable is refused" fail "access_token names PARAM_URL"
 set_defaults
 # shellcheck disable=SC2016
 export PARAM_PASSWORD='${JF_PASSWORD}'
