@@ -2,13 +2,15 @@
 # Tests for src/scripts/configure.sh.
 #
 # Locks these behaviors:
+#   access_token, username and password name environment variables, read by
+#     indirect expansion, and those holding a secret are not exported to jf
 #   missing URL, missing credentials, or both a token and a password fail
 #     before jf is executed
 #   the access token or password is passed on stdin, not as an argument
 #   an empty token saved by jf config add is still a failure
 #   password encryption is off unless encrypt_password is true
 #   an encrypted password that is actually an HTML document is rejected
-#   use exports JFROG_CLI_SERVER_ID for later steps
+#   set_default exports JFROG_CLI_SERVER_ID for later steps
 #   the command does not call api.github.com to check for a newer jf
 #
 # jf is stubbed, so no network access is needed.
@@ -102,6 +104,8 @@ cat > "${BIN}/jf" << 'EOF'
   printf '%q ' "$@"
   printf '\n'
   printf 'ENV warning=%s\n' "${JFROG_CLI_AVOID_NEW_VERSION_WARNING-}"
+  # Which variables that hold a secret jf can see, without their values.
+  printf 'ENV secret_vars=%s,%s,%s;\n' "${JF_ACCESS_TOKEN+JF_ACCESS_TOKEN}" "${JF_PASSWORD+JF_PASSWORD}" "${MY_TOKEN+MY_TOKEN}"
 } >> "${JF_LOG:?}"
 
 if [[ "${1:-}" == "config" && "${2:-}" == "add" ]]; then
@@ -165,20 +169,21 @@ set_defaults() {
   export PARAM_SERVER_ID=jfrog-server
   export PARAM_URL=https://example.jfrog.io
   export PARAM_ARTIFACTORY_URL=
-  export PARAM_ACCESS_TOKEN=token-secret-value
-  export PARAM_USER=
-  export PARAM_PASSWORD=
+  export PARAM_ACCESS_TOKEN=JF_ACCESS_TOKEN
+  export PARAM_USERNAME=JF_USER
+  export PARAM_PASSWORD=JF_PASSWORD
   export PARAM_OVERWRITE=true
   export PARAM_INSECURE_TLS=false
   export PARAM_ENCRYPT_PASSWORD=false
-  export PARAM_USE=true
+  export PARAM_SET_DEFAULT=true
   export JF_ADD_EXIT=0
   export JF_SHOW_EXIT=0
   export JFROG_CLI_HOME_DIR="${TMP}/jfrog-home"
   mkdir -p "$JFROG_CLI_HOME_DIR"
   rm -f "${JFROG_CLI_HOME_DIR}/jfrog-cli.conf.v6"
   unset PATH_MODE UNSET_BASH_ENV JF_SHOW_FILE JF_EXPORT_FILE JF_URL JF_ACCESS_TOKEN JF_USER JF_PASSWORD
-  unset JFROG_CLI_ENCRYPTION_KEY
+  unset JFROG_CLI_ENCRYPTION_KEY MY_TOKEN MY_USER MY_PASSWORD ACCESS_TOKEN PASSWORD URL CREDENTIALS
+  export JF_ACCESS_TOKEN=token-secret-value
 }
 
 # run_configure NAME WANT(pass|fail) EXPECTED_OUTPUT
@@ -280,17 +285,22 @@ assert_out_lacks() {
   fi
 }
 
-yaml_default() {
-  local key="$1"
-  awk -v key="$key" '
+# yaml_field KEY FIELD: prints the FIELD (default, type) of parameter KEY.
+yaml_field() {
+  local key="$1" field="$2"
+  awk -v key="$key" -v field="$field" '
     $0 ~ "^  " key ":" {found=1; next}
-    found && /^    default:/ {
-      sub(/^    default:[[:space:]]*/, "")
+    found && $0 ~ "^    " field ":" {
+      sub("^    " field ":[[:space:]]*", "")
       print
       exit
     }
     found && /^  [^ ]/ {exit}
   ' "$COMMAND"
+}
+
+yaml_default() {
+  yaml_field "$1" default
 }
 
 TOKEN=token-secret-value
@@ -316,16 +326,16 @@ else
 fi
 
 set_defaults
-export PARAM_USER=ci
+export JF_USER=ci
 run_configure "user is stored with an access token" pass "Configured jf server 'jfrog-server'."
 assert_log_has "user flag is passed" "--user=ci"
 assert_log_has "token stdin stays in use" "--access-token-stdin=true"
 assert_log_lacks "password stdin is not used" "--password-stdin=true"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export JF_SHOW_FILE="${TMP}/show-password.txt"
 cat > "$JF_SHOW_FILE" << 'EOF'
 Server ID: jfrog-server
@@ -344,22 +354,22 @@ assert_stdin "password is the stdin payload" "password-secret-value"
 assert_out_lacks "password is not in the step output" "password-secret-value"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_PASSWORD=
-run_configure "missing credentials fail" fail "No credentials."
+unset JF_ACCESS_TOKEN
+unset JF_PASSWORD
+run_configure "missing credentials fail" fail "No credentials. Set JF_ACCESS_TOKEN (named by access_token), or set JF_USER and JF_PASSWORD"
 assert_not_called "missing credentials do not call jf"
 
 set_defaults
-export PARAM_PASSWORD=password-secret-value
-run_configure "token and password together fail" fail "Both an access token and a password"
+export JF_PASSWORD=password-secret-value
+run_configure "token and password together fail" fail "Both an access token and a password were provided: JF_ACCESS_TOKEN (named by access_token) and JF_PASSWORD (named by password)"
 assert_not_called "mixed credentials do not call jf"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_PASSWORD=password-secret-value
-export PARAM_USER=
-run_configure "password without a user fails" fail "without a user"
-assert_not_called "password without a user does not call jf"
+unset JF_ACCESS_TOKEN
+export JF_PASSWORD=password-secret-value
+unset JF_USER
+run_configure "password without a username fails" fail "without a username. Set JF_USER"
+assert_not_called "password without a username does not call jf"
 
 set_defaults
 export PARAM_URL=
@@ -427,34 +437,34 @@ set_defaults
 export PARAM_OVERWRITE=1
 export PARAM_INSECURE_TLS=0
 export PARAM_ENCRYPT_PASSWORD=0
-export PARAM_USE=1
+export PARAM_SET_DEFAULT=1
 run_configure "circleci boolean 1 and 0 are accepted" pass "Configured jf server 'jfrog-server'."
 assert_log_has "overwrite 1 becomes true" "--overwrite=true"
 assert_log_lacks "overwrite is not passed as 1" "--overwrite=1"
 assert_log_has "encrypt 0 becomes false" "--enc-password=false"
 assert_log_lacks "encrypt is not passed as 0" "--enc-password=0"
-assert_log_has "use 1 still selects the server" "config use jfrog-server"
+assert_log_has "set_default 1 still selects the server" "config use jfrog-server"
 assert_log_lacks "insecure tls 0 stays off" "--insecure-tls=true"
 assert_out_lacks "normalized overwrite is logged as true" "overwrite: 1"
 
 set_defaults
 export PARAM_OVERWRITE=0
-export PARAM_USE=0
+export PARAM_SET_DEFAULT=0
 export PARAM_INSECURE_TLS=1
 run_configure "circleci boolean 0 turns flags off" pass "Configured jf server 'jfrog-server'."
 assert_log_has "overwrite 0 becomes false" "--overwrite=false"
 assert_log_has "insecure tls 1 becomes the flag" "--insecure-tls=true"
-assert_log_lacks "use 0 skips config use" "config use"
+assert_log_lacks "set_default 0 skips config use" "config use"
 
 set_defaults
-export PARAM_USE=false
-run_configure "use false does not change the default server" pass "Configured jf server 'jfrog-server'."
+export PARAM_SET_DEFAULT=false
+run_configure "set_default false does not change the default server" pass "Configured jf server 'jfrog-server'."
 assert_log_lacks "config use is skipped" "config use"
 if [[ -s "$LAST_BASH" ]]; then
-  bad "use false leaves BASH_ENV unchanged" "BASH_ENV was written"
+  bad "set_default false leaves BASH_ENV unchanged" "BASH_ENV was written"
   sed 's/^/    /' "$LAST_BASH"
 else
-  ok "use false leaves BASH_ENV unchanged"
+  ok "set_default false leaves BASH_ENV unchanged"
 fi
 
 set_defaults
@@ -525,23 +535,91 @@ set_defaults
 # The ${...} text is expanded by the circleci stub, not by this shell.
 # shellcheck disable=SC2016
 export PARAM_URL='${JF_URL}'
-# shellcheck disable=SC2016
-export PARAM_ACCESS_TOKEN='${JF_ACCESS_TOKEN}'
 export JF_URL=https://from-env.jfrog.io
 export JF_ACCESS_TOKEN=env-token-secret
-run_configure "JF_URL and JF_ACCESS_TOKEN are the defaults" pass "Configured jf server 'jfrog-server'."
+run_configure "JF_URL and the JF_ACCESS_TOKEN variable are the defaults" pass "access_token: JF_ACCESS_TOKEN (set)"
 assert_log_has "expanded platform url" "--url=https://from-env.jfrog.io"
-assert_stdin "expanded access token" "env-token-secret"
-assert_out_lacks "expanded token is not logged" "env-token-secret"
+assert_stdin "access token read from JF_ACCESS_TOKEN" "env-token-secret"
+assert_out_lacks "the token is not logged" "env-token-secret"
+assert_log_has "JF_ACCESS_TOKEN is not exported to jf" "ENV secret_vars=,,;"
 
 set_defaults
-export PARAM_ACCESS_TOKEN='   token-secret-value   '
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
+export JF_SHOW_FILE="${TMP}/show-password.txt"
+run_configure "a password is read from JF_PASSWORD" pass "password: JF_PASSWORD (set)"
+assert_stdin "password read from JF_PASSWORD" "password-secret-value"
+assert_log_has "username read from JF_USER" "--user=ci"
+assert_log_has "JF_PASSWORD is not exported to jf" "ENV secret_vars=,,;"
+
+set_defaults
+unset JF_ACCESS_TOKEN
+export PARAM_ACCESS_TOKEN=MY_TOKEN
+export PARAM_USERNAME=MY_USER
+export MY_TOKEN=custom-token-secret
+export MY_USER=custom-user
+run_configure "access_token and username name other variables" pass "access_token: MY_TOKEN (set)"
+assert_stdin "token read from the named variable" "custom-token-secret"
+assert_log_has "username read from the named variable" "--user=custom-user"
+assert_log_has "the named token variable is not exported to jf" "ENV secret_vars=,,;"
+
+# Names the script also uses for its own variables must still be read.
+for name in ACCESS_TOKEN PASSWORD URL CREDENTIALS; do
+  set_defaults
+  unset JF_ACCESS_TOKEN
+  export PARAM_ACCESS_TOKEN="$name"
+  export "${name}=collision-token-secret"
+  run_configure "a token in a variable named ${name} is read" pass "Configured jf server 'jfrog-server'."
+  assert_stdin "the token in ${name} is the stdin payload" "collision-token-secret"
+  assert_log_has "url is unaffected by a token in ${name}" "--url=https://example.jfrog.io"
+done
+set_defaults
+unset JF_ACCESS_TOKEN
+export PARAM_PASSWORD=PASSWORD PARAM_USERNAME=USERNAME
+export PASSWORD=collision-password-secret USERNAME=ci
+export JF_SHOW_FILE="${TMP}/show-password.txt"
+run_configure "a password in a variable named PASSWORD is read" pass "Configured jf server 'jfrog-server'."
+assert_stdin "the password in PASSWORD is the stdin payload" "collision-password-secret"
+unset USERNAME
+
+# shellcheck disable=SC2016
+for bad_name in '${JF_ACCESS_TOKEN}' 'JF ACCESS TOKEN' '1TOKEN' ''; do
+  set_defaults
+  export PARAM_ACCESS_TOKEN="$bad_name"
+  run_configure "access_token '${bad_name}' is not a variable name" fail "access_token must be the name of an environment variable"
+  assert_not_called "access_token '${bad_name}' does not call jf"
+done
+# The step's environment sets PARAM_<NAME> to the parameter value, so a
+# credential variable with that name is replaced by its own name.
+for param in ACCESS_TOKEN USERNAME PASSWORD; do
+  set_defaults
+  export "PARAM_${param}=PARAM_${param}"
+  run_configure "a credential variable named PARAM_${param} is refused" fail "PARAM_* variables are reserved"
+  assert_not_called "PARAM_${param} as a credential name does not call jf"
+done
+set_defaults
+export PARAM_ACCESS_TOKEN=PARAM_URL
+run_configure "access_token naming another parameter variable is refused" fail "access_token names PARAM_URL"
+set_defaults
+# shellcheck disable=SC2016
+export PARAM_PASSWORD='${JF_PASSWORD}'
+run_configure "a password template is not a variable name" fail "password must be the name of an environment variable"
+set_defaults
+export PARAM_USERNAME=ci
+export ci=
+run_configure "a username that names an unset variable leaves the username unset" pass "username: ci (unset)"
+assert_log_lacks "no user flag for an unset username variable" "--user="
+unset ci
+
+set_defaults
+export JF_ACCESS_TOKEN='   token-secret-value   '
 run_configure "surrounding whitespace on a token is ignored" pass "Configured jf server 'jfrog-server'."
 assert_stdin "trimmed token" "token-secret-value"
 
 set_defaults
-export PARAM_ACCESS_TOKEN='   '
-export PARAM_PASSWORD=
+export JF_ACCESS_TOKEN='   '
+unset JF_PASSWORD
 run_configure "a whitespace-only token counts as missing" fail "No credentials."
 assert_not_called "a blank token does not call jf"
 
@@ -561,9 +639,9 @@ run_configure "missing circleci CLI fails" fail "circleci CLI is not on PATH"
 assert_not_called "missing circleci does not call jf"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
 export JF_EXPORT_FILE="${TMP}/export-ciphertext.json"
@@ -573,9 +651,9 @@ assert_log_has "encryption flag is true" "--enc-password=true"
 assert_log_has "saved password is read back with config export" "config export jfrog-server"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
 export JF_EXPORT_FILE="${TMP}/export-html.json"
@@ -585,9 +663,9 @@ run_configure "an encrypted password that is an HTML document fails" fail "store
 assert_log_has "the bad profile is removed" "config rm jfrog-server"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JFROG_CLI_ENCRYPTION_KEY=00112233445566778899aabbccddeeff
 export JF_SHOW_FILE="${TMP}/show-password.txt"
@@ -596,9 +674,9 @@ printf '%s\n' '{"password":"\u003c!DOCTYPE html>","serverId":"jfrog-server"}' > 
 run_configure "HTML is rejected when the CLI encryption key is set" fail "stored a document instead of a ciphertext"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
 export JF_EXPORT_FILE="${TMP}/export-html-newline.json"
@@ -607,9 +685,9 @@ printf '%s\n' '{"password":"\n\u003c!DOCTYPE html>","serverId":"jfrog-server"}' 
 run_configure "HTML with a leading newline is rejected" fail "stored a document instead of a ciphertext"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
 export JF_EXPORT_FILE="${TMP}/export-html-space.json"
@@ -617,9 +695,9 @@ printf '%s\n' '{"password":" \u003chtml>","serverId":"jfrog-server"}' > "$JF_EXP
 run_configure "HTML with a leading space is rejected" fail "stored a document instead of a ciphertext"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
 export JF_EXPORT_FILE="${TMP}/export-html-bom.json"
@@ -627,9 +705,9 @@ printf '%s\n' '{"password":"\ufeff\u003c!DOCTYPE html>","serverId":"jfrog-server
 run_configure "HTML with a leading BOM is rejected" fail "stored a document instead of a ciphertext"
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
 export JF_EXPORT_FILE="${TMP}/export-ciphertext-lt.json"
@@ -637,9 +715,9 @@ printf '%s\n' '{"password":"AM6\u003cstill-ciphertext","serverId":"jfrog-server"
 run_configure "a ciphertext that contains an encoded less-than is kept" pass "Configured jf server 'jfrog-server'."
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
 export JF_EXPORT_FILE="${TMP}/export-other-server-html.json"
@@ -648,9 +726,9 @@ printf '%s\n' '{"servers":[{"password":"\u003csecret","serverId":"other"},{"pass
 run_configure "another server's password is not treated as this server's" pass "Configured jf server 'jfrog-server'."
 
 set_defaults
-export PARAM_ACCESS_TOKEN=
-export PARAM_USER=ci
-export PARAM_PASSWORD=password-secret-value
+unset JF_ACCESS_TOKEN
+export JF_USER=ci
+export JF_PASSWORD=password-secret-value
 export PARAM_ENCRYPT_PASSWORD=true
 export JF_SHOW_FILE="${TMP}/show-password.txt"
 export JF_EXPORT_FILE="${TMP}/export-this-server-html.json"
@@ -668,33 +746,29 @@ if [[ "$(yaml_default url)" == '"${JF_URL}"' ]]; then
 else
   bad "command default url is JF_URL" "got '$(yaml_default url)'"
 fi
-# shellcheck disable=SC2016
-if [[ "$(yaml_default access_token)" == '"${JF_ACCESS_TOKEN}"' ]]; then
-  ok "command default access_token is JF_ACCESS_TOKEN"
+for pair in access_token=JF_ACCESS_TOKEN username=JF_USER password=JF_PASSWORD; do
+  key="${pair%%=*}"
+  want="${pair#*=}"
+  if [[ "$(yaml_field "$key" type)" == "env_var_name" && "$(yaml_default "$key")" == "$want" ]]; then
+    ok "command parameter ${key} is an env_var_name defaulting to ${want}"
+  else
+    bad "command parameter ${key} is an env_var_name defaulting to ${want}" "got type '$(yaml_field "$key" type)', default '$(yaml_default "$key")'"
+  fi
+done
+if [[ -z "$(yaml_field user type)" && -z "$(yaml_field use type)" ]]; then
+  ok "command has no user or use parameter"
 else
-  bad "command default access_token is JF_ACCESS_TOKEN" "got '$(yaml_default access_token)'"
-fi
-# shellcheck disable=SC2016
-if [[ "$(yaml_default user)" == '"${JF_USER}"' ]]; then
-  ok "command default user is JF_USER"
-else
-  bad "command default user is JF_USER" "got '$(yaml_default user)'"
-fi
-# shellcheck disable=SC2016
-if [[ "$(yaml_default password)" == '"${JF_PASSWORD}"' ]]; then
-  ok "command default password is JF_PASSWORD"
-else
-  bad "command default password is JF_PASSWORD" "got '$(yaml_default password)'"
+  bad "command has no user or use parameter" "found one of them"
 fi
 if [[ "$(yaml_default encrypt_password)" == "false" ]]; then
   ok "command default encrypt_password is false"
 else
   bad "command default encrypt_password is false" "got '$(yaml_default encrypt_password)'"
 fi
-if [[ "$(yaml_default use)" == "true" ]]; then
-  ok "command default use is true"
+if [[ "$(yaml_default set_default)" == "true" ]]; then
+  ok "command default set_default is true"
 else
-  bad "command default use is true" "got '$(yaml_default use)'"
+  bad "command default set_default is true" "got '$(yaml_default set_default)'"
 fi
 if grep -qF 'scripts/configure.sh' "$COMMAND"; then
   ok "configure command includes the script"
@@ -703,11 +777,15 @@ else
 fi
 
 # Run configure.sh against a real jf binary. Arguments after the outfile are
-# env assignments (PATH, PARAM_*, ...). GNU env -C selects the working directory.
+# env assignments (PATH, PARAM_*, JF_ACCESS_TOKEN, ...). The credential
+# parameters name JF_ACCESS_TOKEN, JF_USER and JF_PASSWORD, which are unset
+# unless an assignment sets them. GNU env -C selects the working directory.
 real_configure() {
   local work="$1" outfile="$2"
   shift 2
-  env -C "$work" "$@" /bin/bash "$SCRIPT" > "$outfile" 2>&1
+  env -C "$work" -u JF_ACCESS_TOKEN -u JF_USER -u JF_PASSWORD \
+    PARAM_ACCESS_TOKEN=JF_ACCESS_TOKEN PARAM_USERNAME=JF_USER PARAM_PASSWORD=JF_PASSWORD \
+    "$@" /bin/bash "$SCRIPT" > "$outfile" 2>&1
 }
 
 if [[ "${RUN_REAL_JF:-0}" == "1" ]]; then
@@ -746,13 +824,12 @@ if [[ "${RUN_REAL_JF:-0}" == "1" ]]; then
       PARAM_SERVER_ID=jfrog-server \
       PARAM_URL=https://example.jfrog.io \
       PARAM_ARTIFACTORY_URL="" \
-      PARAM_ACCESS_TOKEN=real-token-secret \
-      PARAM_USER=ci \
-      PARAM_PASSWORD="" \
+      JF_ACCESS_TOKEN=real-token-secret \
+      JF_USER=ci \
       PARAM_OVERWRITE=true \
       PARAM_INSECURE_TLS=false \
       PARAM_ENCRYPT_PASSWORD=false \
-      PARAM_USE=true
+      PARAM_SET_DEFAULT=true
     status=$?
     set -e
     name="real $(basename "$jf_bin") saves a token"
@@ -789,13 +866,11 @@ PY
       PARAM_SERVER_ID=jfrog-server \
       PARAM_URL=https://example.jfrog.io \
       PARAM_ARTIFACTORY_URL="" \
-      PARAM_ACCESS_TOKEN=real-token-secret-2 \
-      PARAM_USER="" \
-      PARAM_PASSWORD="" \
+      JF_ACCESS_TOKEN=real-token-secret-2 \
       PARAM_OVERWRITE=true \
       PARAM_INSECURE_TLS=false \
       PARAM_ENCRYPT_PASSWORD=false \
-      PARAM_USE=true
+      PARAM_SET_DEFAULT=true
     python3 - "$home/jfrog-cli.conf.v6" << 'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
@@ -812,19 +887,17 @@ PY
       PARAM_SERVER_ID=second-server \
       PARAM_URL=https://other.example.jfrog.io \
       PARAM_ARTIFACTORY_URL="" \
-      PARAM_ACCESS_TOKEN=real-token-secret-3 \
-      PARAM_USER="" \
-      PARAM_PASSWORD="" \
+      JF_ACCESS_TOKEN=real-token-secret-3 \
       PARAM_OVERWRITE=true \
       PARAM_INSECURE_TLS=false \
       PARAM_ENCRYPT_PASSWORD=false \
-      PARAM_USE=false
+      PARAM_SET_DEFAULT=false
     show_first="$(JFROG_CLI_HOME_DIR="$home" "$jf_bin" config show jfrog-server)"
     show_second="$(JFROG_CLI_HOME_DIR="$home" "$jf_bin" config show second-server)"
     if [[ "$show_first" == *"Default:"*"true"* && "$show_second" == *"Default:"*"false"* ]]; then
-      ok "real $(basename "$jf_bin") use false keeps the first server default"
+      ok "real $(basename "$jf_bin") set_default false keeps the first server default"
     else
-      bad "real $(basename "$jf_bin") use false keeps the first server default" "defaults did not match"
+      bad "real $(basename "$jf_bin") set_default false keeps the first server default" "defaults did not match"
     fi
 
     mkdir -p "${home}-jwt"
@@ -844,13 +917,11 @@ PY
       PARAM_SERVER_ID=jwt-server \
       PARAM_URL=https://example.jfrog.io \
       PARAM_ARTIFACTORY_URL="" \
-      PARAM_ACCESS_TOKEN="$jwt" \
-      PARAM_USER="" \
-      PARAM_PASSWORD="" \
+      JF_ACCESS_TOKEN="$jwt" \
       PARAM_OVERWRITE=true \
       PARAM_INSECURE_TLS=false \
       PARAM_ENCRYPT_PASSWORD=false \
-      PARAM_USE=false
+      PARAM_SET_DEFAULT=false
     jwt_status=$?
     set -e
     if [[ "$jwt_status" -eq 0 ]] && grep -qF "Configured jf server 'jwt-server'." "${work}/jwt.out"; then
@@ -869,13 +940,12 @@ PY
       PARAM_SERVER_ID=jfrog-server \
       PARAM_URL=https://does-not-exist.invalid \
       PARAM_ARTIFACTORY_URL="" \
-      PARAM_ACCESS_TOKEN="" \
-      PARAM_USER=ci \
-      PARAM_PASSWORD=password-secret-value \
+      JF_USER=ci \
+      JF_PASSWORD=password-secret-value \
       PARAM_OVERWRITE=true \
       PARAM_INSECURE_TLS=false \
       PARAM_ENCRYPT_PASSWORD=true \
-      PARAM_USE=true
+      PARAM_SET_DEFAULT=true
     enc_status=$?
     set -e
     if [[ "$enc_status" -ne 0 ]] && grep -qF "encrypt your password" "${work}/enc.out"; then

@@ -1,5 +1,7 @@
 description: >
-  Install a pinned jf, configure a server from JF_URL and JF_ACCESS_TOKEN, and ping Artifactory.
+  Install a pinned jf, configure a server from JF_URL and the access token in JF_ACCESS_TOKEN,
+  and ping Artifactory. Store both variables in a context. To read the token from another
+  variable, pass that variable's name, for example access_token: JF_DEPLOY_TOKEN.
 
 usage:
   version: 2.1
@@ -17,4 +19,5 @@ usage:
   workflows:
     use-my-orb:
       jobs:
-        - jfrog-cli
+        - jfrog-cli:
+            context: jfrog
