@@ -1,7 +1,7 @@
 #!/bin/bash
 
-set -eo pipefail
-set +o history
+set -euo pipefail
+# A job can turn xtrace on for every step (SHELLOPTS, or set -x in $BASH_ENV); keep it off here as configure does.
 set +o xtrace
 
 # Ping Artifactory with the server profile written by configure.
@@ -9,7 +9,7 @@ set +o xtrace
 # repository, and an anonymous Artifactory returns OK for a wrong token.
 
 if ! command -v circleci >/dev/null 2>&1; then
-    echo "ERROR: The circleci CLI is not on PATH, so command parameters cannot be expanded."
+    echo "ERROR: The circleci CLI is not on PATH, so command parameters cannot be expanded." >&2
     exit 1
 fi
 
@@ -33,7 +33,7 @@ normalize_bool() {
         true | TRUE | True | 1) normalized=true ;;
         false | FALSE | False | 0) normalized=false ;;
         *)
-            echo "ERROR: ${name} must be true or false, not '${value}'."
+            echo "ERROR: ${name} must be true or false, not '${value}'." >&2
             exit 1
             ;;
     esac
@@ -51,12 +51,12 @@ if [[ -z "$SERVER_ID" && -n "${JFROG_CLI_SERVER_ID:-}" ]]; then
     SERVER_ID="${JFROG_CLI_SERVER_ID}"
 fi
 if [[ -n "$SERVER_ID" && "$SERVER_ID" == -* ]]; then
-    echo "ERROR: server_id must not start with '-'."
+    echo "ERROR: server_id must not start with '-'." >&2
     exit 1
 fi
 
 if ! command -v jf >/dev/null 2>&1; then
-    echo "ERROR: jf is not on PATH. Run the install command before ping."
+    echo "ERROR: jf is not on PATH. Run the install command before ping." >&2
     exit 1
 fi
 

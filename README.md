@@ -307,6 +307,10 @@ Hosts to allow if you run a locked-down, self-hosted CircleCI pipeline on-prem:
 
 Pipelines that rely on the defaults (`JF_ACCESS_TOKEN`, `JF_USER`, `JF_PASSWORD`) need no change. `url` and `artifactory_url` are still strings expanded with `circleci env subst`.
 
+### Unreleased: messages on stderr
+
+`configure` and `ping` now write their `ERROR:` and `WARN:` messages, and the `jf config show` output `configure` prints with an error, to stderr instead of stdout.
+
 ### v0.2.0: configure and ping
 
 `configure` writes one `jf` server profile and checks that the token or password was actually saved. `ping` runs `jf rt ping`. Pipelines that only call `install` are unchanged.
