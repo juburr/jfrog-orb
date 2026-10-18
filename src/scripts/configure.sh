@@ -1,7 +1,7 @@
 #!/bin/bash
 
-set -eo pipefail
-set +o history
+set -euo pipefail
+# A job can turn xtrace on for every step (SHELLOPTS, or set -x in $BASH_ENV), and it would print the token or password.
 set +o xtrace
 
 # Configure one JFrog server profile for later jf commands in this job.
@@ -19,7 +19,7 @@ set +o xtrace
 # the command still exits 0. Access tokens are stored as themselves either way.
 
 if ! command -v circleci >/dev/null 2>&1; then
-    echo "ERROR: The circleci CLI is not on PATH, so command parameters cannot be expanded."
+    echo "ERROR: The circleci CLI is not on PATH, so command parameters cannot be expanded." >&2
     exit 1
 fi
 
@@ -66,7 +66,7 @@ normalize_bool() {
         true | TRUE | True | 1) normalized=true ;;
         false | FALSE | False | 0) normalized=false ;;
         *)
-            echo "ERROR: ${name} must be true or false, not '${value}'."
+            echo "ERROR: ${name} must be true or false, not '${value}'." >&2
             exit 1
             ;;
     esac
@@ -78,13 +78,13 @@ normalize_bool() {
 require_env_var_name() {
     local name="$1" value="$2"
     if [[ ! "$value" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-        echo "ERROR: ${name} must be the name of an environment variable, not '${value}'."
+        echo "ERROR: ${name} must be the name of an environment variable, not '${value}'." >&2
         exit 1
     fi
     # The step sets PARAM_* to this command's parameter values, replacing any
     # variable of the same name before this script can read it.
     if [[ "$value" == PARAM_* ]]; then
-        echo "ERROR: ${name} names ${value}, but PARAM_* variables are reserved for this command's parameters. Store the secret under another name."
+        echo "ERROR: ${name} names ${value}, but PARAM_* variables are reserved for this command's parameters. Store the secret under another name." >&2
         exit 1
     fi
 }
@@ -97,12 +97,12 @@ require_http_url() {
     case "$value" in
         http://* | https://*) ;;
         *)
-            echo "ERROR: ${name} must start with http:// or https://."
+            echo "ERROR: ${name} must start with http:// or https://." >&2
             exit 1
             ;;
     esac
     if [[ "$value" == *$'\n'* || "$value" == *$'\t'* ]]; then
-        echo "ERROR: ${name} must not contain tabs or newlines."
+        echo "ERROR: ${name} must not contain tabs or newlines." >&2
         exit 1
     fi
 }
@@ -310,20 +310,20 @@ normalize_bool encrypt_password "$ENCRYPT_PASSWORD" ENCRYPT_PASSWORD
 normalize_bool set_default "$SET_DEFAULT" SET_DEFAULT
 
 if [[ -z "$SERVER_ID" ]]; then
-    echo "ERROR: server_id is empty."
+    echo "ERROR: server_id is empty." >&2
     exit 1
 fi
 if [[ "$SERVER_ID" == -* ]]; then
-    echo "ERROR: server_id must not start with '-'."
+    echo "ERROR: server_id must not start with '-'." >&2
     exit 1
 fi
 if [[ "$SERVER_ID" == *$'\n'* || "$SERVER_ID" == *$'\t'* ]]; then
-    echo "ERROR: server_id must not contain tabs or newlines."
+    echo "ERROR: server_id must not contain tabs or newlines." >&2
     exit 1
 fi
 case "$SERVER_ID" in
     delete | use | show | clear)
-        echo "ERROR: server_id '${SERVER_ID}' is reserved by jf. Choose another id."
+        echo "ERROR: server_id '${SERVER_ID}' is reserved by jf. Choose another id." >&2
         exit 1
         ;;
 esac
@@ -331,30 +331,30 @@ esac
 require_http_url url "$URL"
 require_http_url artifactory_url "$ARTIFACTORY_URL"
 if [[ -z "$URL" && -z "$ARTIFACTORY_URL" ]]; then
-    echo "ERROR: No JFrog URL. Set url or JF_URL to the platform URL (for example https://acme.jfrog.io), or set artifactory_url."
+    echo "ERROR: No JFrog URL. Set url or JF_URL to the platform URL (for example https://acme.jfrog.io), or set artifactory_url." >&2
     exit 1
 fi
 
 url_without_slash="${URL%/}"
 if [[ -n "$URL" && "$url_without_slash" == */artifactory ]]; then
-    echo "WARN: url ends with /artifactory. url is the JFrog Platform URL, for example https://acme.jfrog.io. Put an Artifactory-only URL in artifactory_url."
+    echo "WARN: url ends with /artifactory. url is the JFrog Platform URL, for example https://acme.jfrog.io. Put an Artifactory-only URL in artifactory_url." >&2
 fi
 
 if [[ -n "$ACCESS_TOKEN" && -n "$PASSWORD" ]]; then
-    echo "ERROR: Both an access token and a password were provided: ${ACCESS_TOKEN_VAR} (named by access_token) and ${PASSWORD_VAR} (named by password) are both set. Unset the one this job should not use, or point its parameter at a variable that is not set."
+    echo "ERROR: Both an access token and a password were provided: ${ACCESS_TOKEN_VAR} (named by access_token) and ${PASSWORD_VAR} (named by password) are both set. Unset the one this job should not use, or point its parameter at a variable that is not set." >&2
     exit 1
 fi
 if [[ -z "$ACCESS_TOKEN" && -z "$PASSWORD" ]]; then
-    echo "ERROR: No credentials. Set ${ACCESS_TOKEN_VAR} (named by access_token), or set ${USERNAME_VAR} and ${PASSWORD_VAR} (named by username and password)."
+    echo "ERROR: No credentials. Set ${ACCESS_TOKEN_VAR} (named by access_token), or set ${USERNAME_VAR} and ${PASSWORD_VAR} (named by username and password)." >&2
     exit 1
 fi
 if [[ -n "$PASSWORD" && -z "$CONFIG_USER" ]]; then
-    echo "ERROR: A password was provided without a username. Set ${USERNAME_VAR} (named by username)."
+    echo "ERROR: A password was provided without a username. Set ${USERNAME_VAR} (named by username)." >&2
     exit 1
 fi
 
 if ! command -v jf >/dev/null 2>&1; then
-    echo "ERROR: jf is not on PATH. Run the install command before configure."
+    echo "ERROR: jf is not on PATH. Run the install command before configure." >&2
     exit 1
 fi
 
@@ -419,7 +419,7 @@ printf '%s' "$secret" | jf "${args[@]}"
 unset secret
 
 if ! SHOW_OUT="$(jf config show "$SERVER_ID")"; then
-    echo "ERROR: jf config show failed for server id '${SERVER_ID}'."
+    echo "ERROR: jf config show failed for server id '${SERVER_ID}'." >&2
     exit 1
 fi
 
@@ -430,18 +430,18 @@ shown_token="$(field_value "Access token")"
 shown_password="$(field_value "Password")"
 
 if [[ "$shown_id" != "$SERVER_ID" ]]; then
-    echo "ERROR: jf config show did not report server id '${SERVER_ID}'."
-    printf '%s\n' "$SHOW_OUT"
+    echo "ERROR: jf config show did not report server id '${SERVER_ID}'." >&2
+    printf '%s\n' "$SHOW_OUT" >&2
     exit 1
 fi
 if [[ -z "$shown_platform" && -z "$shown_artifactory" ]]; then
-    echo "ERROR: jf saved server id '${SERVER_ID}' without a URL. jf config add exits 0 even when the saved profile is incomplete."
-    printf '%s\n' "$SHOW_OUT"
+    echo "ERROR: jf saved server id '${SERVER_ID}' without a URL. jf config add exits 0 even when the saved profile is incomplete." >&2
+    printf '%s\n' "$SHOW_OUT" >&2
     exit 1
 fi
 if ! secret_is_masked "$shown_token" && ! secret_is_masked "$shown_password"; then
-    echo "ERROR: jf saved server id '${SERVER_ID}' without an access token or password. jf config add exits 0 even when the saved profile has no credentials."
-    printf '%s\n' "$SHOW_OUT"
+    echo "ERROR: jf saved server id '${SERVER_ID}' without an access token or password. jf config add exits 0 even when the saved profile has no credentials." >&2
+    printf '%s\n' "$SHOW_OUT" >&2
     exit 1
 fi
 
@@ -452,12 +452,12 @@ fi
 if [[ "$auth_mode" == "password" && "$ENCRYPT_PASSWORD" == "true" ]]; then
     if ! command -v base64 >/dev/null 2>&1; then
         jf config rm "$SERVER_ID" --quiet || true
-        echo "ERROR: Password encryption could not be checked because base64 is not on PATH. The server profile was removed."
+        echo "ERROR: Password encryption could not be checked because base64 is not on PATH. The server profile was removed." >&2
         exit 1
     fi
     export_token="$(jf config export "$SERVER_ID")" || {
         jf config rm "$SERVER_ID" --quiet || true
-        echo "ERROR: Could not read the saved password back to verify encryption. The server profile was removed."
+        echo "ERROR: Could not read the saved password back to verify encryption. The server profile was removed." >&2
         exit 1
     }
     export_token="${export_token//$'\n'/}"
@@ -470,28 +470,28 @@ if [[ "$auth_mode" == "password" && "$ENCRYPT_PASSWORD" == "true" ]]; then
         1)
             unset export_token
             jf config rm "$SERVER_ID" --quiet || true
-            echo "ERROR: Could not read the saved password back to verify encryption. The server profile was removed."
+            echo "ERROR: Could not read the saved password back to verify encryption. The server profile was removed." >&2
             exit 1
             ;;
     esac
     if ! decoded="$(printf '%s' "$export_token" | base64 -d 2>/dev/null)"; then
         unset export_token decoded
         jf config rm "$SERVER_ID" --quiet || true
-        echo "ERROR: Could not read the saved password back to verify encryption. The server profile was removed."
+        echo "ERROR: Could not read the saved password back to verify encryption. The server profile was removed." >&2
         exit 1
     fi
     unset export_token
     if ! saved_password="$(saved_password_for_server "$decoded" "$SERVER_ID")"; then
         unset decoded saved_password
         jf config rm "$SERVER_ID" --quiet || true
-        echo "ERROR: Could not read the saved password for server id '${SERVER_ID}'. The server profile was removed."
+        echo "ERROR: Could not read the saved password for server id '${SERVER_ID}'. The server profile was removed." >&2
         exit 1
     fi
     unset decoded
     if password_is_document "$saved_password"; then
         unset saved_password
         jf config rm "$SERVER_ID" --quiet || true
-        echo "ERROR: Password encryption stored a document instead of a ciphertext. The Artifactory encryption endpoint returned a page that is not an encrypted password. Leave encrypt_password false, or point url at the JFrog Platform."
+        echo "ERROR: Password encryption stored a document instead of a ciphertext. The Artifactory encryption endpoint returned a page that is not an encrypted password. Leave encrypt_password false, or point url at the JFrog Platform." >&2
         exit 1
     fi
     unset saved_password
@@ -503,7 +503,7 @@ if [[ "$SET_DEFAULT" == "true" ]]; then
     if [[ -n "${BASH_ENV:-}" ]]; then
         printf 'export JFROG_CLI_SERVER_ID=%q\n' "$SERVER_ID" >> "$BASH_ENV"
     else
-        echo "WARN: BASH_ENV is unset, so later steps will not see JFROG_CLI_SERVER_ID. jf config use still marked this server as the default."
+        echo "WARN: BASH_ENV is unset, so later steps will not see JFROG_CLI_SERVER_ID. jf config use still marked this server as the default." >&2
     fi
 fi
 
