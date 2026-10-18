@@ -11,7 +11,9 @@ set +o xtrace
 # used because jf 2.70.0 (the oldest version this orb installs) rejects
 # `jf config show --format=json`.
 #
-# Secrets are passed on stdin. Password encryption is off unless asked for:
+# access_token, username and password are the names of environment variables,
+# read here by indirect expansion. Secrets are passed on stdin. Password
+# encryption is off unless asked for:
 # the CLI encrypts a password by calling Artifactory, and a non-Artifactory
 # HTTP 200 (an HTML page, for example) can be stored as the password while
 # the command still exits 0. Access tokens are stored as themselves either way.
@@ -69,6 +71,16 @@ normalize_bool() {
             ;;
     esac
     printf -v "$dest" '%s' "$normalized"
+}
+
+# CircleCI checks the env_var_name type, but the script can also be run
+# directly, and bash fails on an indirect expansion of an invalid name.
+require_env_var_name() {
+    local name="$1" value="$2"
+    if [[ ! "$value" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+        echo "ERROR: ${name} must be the name of an environment variable, not '${value}'."
+        exit 1
+    fi
 }
 
 require_http_url() {
@@ -253,29 +265,43 @@ field_value() {
     done <<< "$SHOW_OUT" || true
 }
 
+require_env_var_name access_token "${PARAM_ACCESS_TOKEN-}"
+require_env_var_name username "${PARAM_USERNAME-}"
+require_env_var_name password "${PARAM_PASSWORD-}"
+# Read all three in one statement, before this script assigns a variable that
+# could share a name with one of them (ACCESS_TOKEN, PASSWORD, URL, ...).
+CREDENTIALS=("${!PARAM_USERNAME:-}" "${!PARAM_ACCESS_TOKEN:-}" "${!PARAM_PASSWORD:-}")
+ACCESS_TOKEN_VAR="$PARAM_ACCESS_TOKEN"
+USERNAME_VAR="$PARAM_USERNAME"
+PASSWORD_VAR="$PARAM_PASSWORD"
+
+# The variables that hold the token and password are exported to this step.
+# Stop exporting them, and drop the parameters that name them, before jf is
+# executed so the secret is not also sitting in the child process environment.
+# export -n keeps the value, so a name this script also uses is not lost, and
+# later steps still see the variables. The variables below are not exported.
+export -n "${ACCESS_TOKEN_VAR?}" "${PASSWORD_VAR?}"
+unset PARAM_ACCESS_TOKEN PARAM_PASSWORD
+
 SERVER_ID="$(trim "$(subst "${PARAM_SERVER_ID-}")")"
 URL="$(trim "$(subst "${PARAM_URL-}")")"
 ARTIFACTORY_URL="$(trim "$(subst "${PARAM_ARTIFACTORY_URL-}")")"
-CONFIG_USER="$(trim "$(subst "${PARAM_USER-}")")"
-ACCESS_TOKEN="$(trim "$(subst "${PARAM_ACCESS_TOKEN-}")")"
+CONFIG_USER="$(trim "${CREDENTIALS[0]}")"
+ACCESS_TOKEN="$(trim "${CREDENTIALS[1]}")"
 # jf itself trims password stdin (checked on 2.70.0 and 2.125.0), so this trim
 # does not change what is stored. It does make a whitespace-only password fail
 # as missing credentials instead of being saved empty.
-PASSWORD="$(trim "$(subst "${PARAM_PASSWORD-}")")"
+PASSWORD="$(trim "${CREDENTIALS[2]}")"
+unset CREDENTIALS
 OVERWRITE="$(trim "${PARAM_OVERWRITE-}")"
 INSECURE_TLS="$(trim "${PARAM_INSECURE_TLS-}")"
 ENCRYPT_PASSWORD="$(trim "${PARAM_ENCRYPT_PASSWORD-}")"
-USE_SERVER="$(trim "${PARAM_USE-}")"
-
-# The CircleCI step exports these. Drop them before jf is executed so the
-# secret is not also sitting in the child process environment. The locals
-# above are not exported.
-unset PARAM_ACCESS_TOKEN PARAM_PASSWORD
+SET_DEFAULT="$(trim "${PARAM_SET_DEFAULT-}")"
 
 normalize_bool overwrite "$OVERWRITE" OVERWRITE
 normalize_bool insecure_tls "$INSECURE_TLS" INSECURE_TLS
 normalize_bool encrypt_password "$ENCRYPT_PASSWORD" ENCRYPT_PASSWORD
-normalize_bool use "$USE_SERVER" USE_SERVER
+normalize_bool set_default "$SET_DEFAULT" SET_DEFAULT
 
 if [[ -z "$SERVER_ID" ]]; then
     echo "ERROR: server_id is empty."
@@ -309,15 +335,15 @@ if [[ -n "$URL" && "$url_without_slash" == */artifactory ]]; then
 fi
 
 if [[ -n "$ACCESS_TOKEN" && -n "$PASSWORD" ]]; then
-    echo "ERROR: Both an access token and a password were provided. Set access_token or password, not both. If JF_ACCESS_TOKEN and JF_PASSWORD are both set, unset the one this job should not use."
+    echo "ERROR: Both an access token and a password were provided: ${ACCESS_TOKEN_VAR} (named by access_token) and ${PASSWORD_VAR} (named by password) are both set. Unset the one this job should not use, or point its parameter at a variable that is not set."
     exit 1
 fi
 if [[ -z "$ACCESS_TOKEN" && -z "$PASSWORD" ]]; then
-    echo "ERROR: No credentials. Set access_token or JF_ACCESS_TOKEN, or set user and password (JF_USER and JF_PASSWORD)."
+    echo "ERROR: No credentials. Set ${ACCESS_TOKEN_VAR} (named by access_token), or set ${USERNAME_VAR} and ${PASSWORD_VAR} (named by username and password)."
     exit 1
 fi
 if [[ -n "$PASSWORD" && -z "$CONFIG_USER" ]]; then
-    echo "ERROR: A password was provided without a user. Set user or JF_USER."
+    echo "ERROR: A password was provided without a username. Set ${USERNAME_VAR} (named by username)."
     exit 1
 fi
 
@@ -339,24 +365,24 @@ else
     echo "  artifactory_url: (unset)"
 fi
 if [[ -n "$CONFIG_USER" ]]; then
-    echo "  user: ${CONFIG_USER}"
+    echo "  username: ${USERNAME_VAR} (${CONFIG_USER})"
 else
-    echo "  user: (unset)"
+    echo "  username: ${USERNAME_VAR} (unset)"
 fi
 if [[ -n "$ACCESS_TOKEN" ]]; then
-    echo "  access_token: (set)"
+    echo "  access_token: ${ACCESS_TOKEN_VAR} (set)"
 else
-    echo "  access_token: (unset)"
+    echo "  access_token: ${ACCESS_TOKEN_VAR} (unset)"
 fi
 if [[ -n "$PASSWORD" ]]; then
-    echo "  password: (set)"
+    echo "  password: ${PASSWORD_VAR} (set)"
 else
-    echo "  password: (unset)"
+    echo "  password: ${PASSWORD_VAR} (unset)"
 fi
 echo "  overwrite: ${OVERWRITE}"
 echo "  insecure_tls: ${INSECURE_TLS}"
 echo "  encrypt_password: ${ENCRYPT_PASSWORD}"
-echo "  use: ${USE_SERVER}"
+echo "  set_default: ${SET_DEFAULT}"
 
 args=(config add "$SERVER_ID" --interactive=false "--overwrite=${OVERWRITE}" "--enc-password=${ENCRYPT_PASSWORD}")
 if [[ -n "$URL" ]]; then
@@ -465,7 +491,7 @@ if [[ "$auth_mode" == "password" && "$ENCRYPT_PASSWORD" == "true" ]]; then
     unset saved_password
 fi
 
-if [[ "$USE_SERVER" == "true" ]]; then
+if [[ "$SET_DEFAULT" == "true" ]]; then
     jf config use "$SERVER_ID"
     export JFROG_CLI_SERVER_ID="$SERVER_ID"
     if [[ -n "${BASH_ENV:-}" ]]; then

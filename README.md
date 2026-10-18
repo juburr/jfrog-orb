@@ -111,7 +111,7 @@ steps:
 <details>
 <summary><b>Connect to Artifactory and upload a build</b></summary>
 
-Store `JF_URL` and `JF_ACCESS_TOKEN` in a [CircleCI context](https://circleci.com/docs/contexts/). `configure` reads those names unless you pass `url` and `access_token`.
+Store `JF_URL` and `JF_ACCESS_TOKEN` in a [CircleCI context](https://circleci.com/docs/contexts/). `configure` reads those variables unless you pass `url`, or pass `access_token` with the name of another variable.
 
 ```yaml
 jobs:
@@ -166,14 +166,16 @@ steps:
 
 ## 🔑 Configure
 
-`configure` runs `jf config add`, then checks `jf config show`. Run it after `install`. The default server id is `jfrog-server`. It reads `JF_URL`, `JF_ACCESS_TOKEN`, `JF_USER`, and `JF_PASSWORD` from the job environment unless you pass those parameters. Values are expanded with `circleci env subst`, which is what makes `${JF_URL}` work.
+`configure` runs `jf config add`, then checks `jf config show`. Run it after `install`. The default server id is `jfrog-server`.
 
-The token or password goes to `jf` on stdin. On success the command runs `jf config use` and appends `JFROG_CLI_SERVER_ID` to `$BASH_ENV`, so later steps in the job do not need `--server-id`.
+The credentials are never literal parameter values. `access_token`, `username`, and `password` take the **name** of an environment variable, such as one from a context: pass `access_token: JF_DEPLOY_TOKEN`, not `${JF_DEPLOY_TOKEN}`. They read `JF_ACCESS_TOKEN`, `JF_USER`, and `JF_PASSWORD` unless you name other variables. `url` and `artifactory_url` are not secrets, so they are strings expanded with `circleci env subst`; `url` defaults to `${JF_URL}`.
+
+The token or password goes to `jf` on stdin. With `set_default: true` (the default), the command then runs `jf config use` and appends `JFROG_CLI_SERVER_ID` to `$BASH_ENV`, so later steps in the job do not need `--server-id`.
 
 > [!IMPORTANT]
-> `jf config add` exits 0 when the token is empty and still writes the server. `configure` fails in that case. It also fails when the URL is missing, or when both a token and a password are set. If `JF_ACCESS_TOKEN` and `JF_PASSWORD` are both set in the job, unset the one this command should not use.
+> `jf config add` exits 0 when the token is empty and still writes the server. `configure` fails in that case. It also fails when the URL is missing, or when both a token and a password are set. If the variables named by `access_token` and `password` (`JF_ACCESS_TOKEN` and `JF_PASSWORD` by default) are both set in the job, unset the one this command should not use, or point its parameter at a variable that is not set.
 
-`user` is optional next to an access token and required with a password. A reference token used by npm or Maven basic auth needs that username.
+`username` is optional next to an access token and required with a password. A reference token used by npm or Maven basic auth needs that username.
 
 `url` is the platform URL, for example `https://acme.jfrog.io`. A value that ends in `/artifactory` is an Artifactory URL; the command warns and keeps going. For an Artifactory 6 server that does not share one platform URL, pass `artifactory_url` instead.
 
@@ -182,12 +184,12 @@ Password encryption is off (`encrypt_password: false`). Turning it on sends the 
 ```yaml
 - jfrog-orb/configure:
     server_id: deploy
-    url: ${JF_DEPLOY_URL}
-    access_token: ${JF_DEPLOY_TOKEN}
-    use: false
+    url: ${JF_DEPLOY_URL}           # a string, expanded
+    access_token: JF_DEPLOY_TOKEN   # the name of the variable that holds the token
+    set_default: false
 ```
 
-`use: false` adds another server without making it the default. `jf` still marks the first server it saves as the default.
+`set_default: false` adds another server without making it the default: it skips `jf config use` and leaves `JFROG_CLI_SERVER_ID` alone. `jf` still marks the first server it saves as the default.
 
 ## 🏓 Ping
 
@@ -216,13 +218,13 @@ The orb has three commands: `install`, `configure`, and `ping`.
 | `server_id` | string | `jfrog-server` | Server id to write. `jf` reserves `delete`, `use`, `show`, and `clear`. |
 | `url` | string | `${JF_URL}` | Platform URL, for example `https://acme.jfrog.io`. Not an `/artifactory` URL. |
 | `artifactory_url` | string | `""` | Artifactory URL for a server with no shared platform URL, such as Artifactory 6. |
-| `access_token` | string | `${JF_ACCESS_TOKEN}` | Access token, including a reference token, passed on stdin. |
-| `user` | string | `${JF_USER}` | Optional next to a token. Required with a password. |
-| `password` | string | `${JF_PASSWORD}` | Password or API key, passed on stdin. Do not set this with `access_token`. |
+| `access_token` | env_var_name | `JF_ACCESS_TOKEN` | Name of the environment variable that holds the access token (a reference token works too). The token is passed on stdin. |
+| `username` | env_var_name | `JF_USER` | Name of the environment variable that holds the username. Optional next to a token. Required with a password. |
+| `password` | env_var_name | `JF_PASSWORD` | Name of the environment variable that holds the password or API key, passed on stdin. Do not set both this variable and the one `access_token` names. |
 | `overwrite` | boolean | `true` | Replace an existing profile with the same server id. |
 | `insecure_tls` | boolean | `false` | Pass `--insecure-tls` while saving this profile. Later commands do not inherit it. |
 | `encrypt_password` | boolean | `false` | Ask Artifactory to encrypt the password. This sends the password to the platform. |
-| `use` | boolean | `true` | Run `jf config use` and export `JFROG_CLI_SERVER_ID` for later steps. |
+| `set_default` | boolean | `true` | Make this server the default: run `jf config use`, and export `JFROG_CLI_SERVER_ID` to `$BASH_ENV` for later steps. |
 
 ### `ping`
 
@@ -290,6 +292,20 @@ Hosts to allow if you run a locked-down, self-hosted CircleCI pipeline on-prem:
   - `api.github.com`: most `jf` commands check `https://api.github.com/repos/jfrog/jfrog-cli/releases/latest` for a newer CLI release. `jf` records the check in its home directory and repeats it every 6 hours, so on a fresh CI machine it happens once per job. If the check is blocked, `jf` prints a warning and carries on. Set `JFROG_CLI_AVOID_NEW_VERSION_WARNING=true` to turn it off. `configure` and `ping` set that variable for their own step; later steps do not inherit it.
 
 ## 📦 Upgrade Notes
+
+### Unreleased: configure takes credential variable names
+
+> [!IMPORTANT]
+> `configure`'s credential parameters now take the name of an environment variable instead of the secret, like the other juburr orbs. Pass `access_token: MY_TOKEN`, not `access_token: ${MY_TOKEN}` or the token itself. A `${...}` value now fails with an error that it is not a variable name.
+
+| Old | New |
+| --- | --- |
+| `access_token` (string, default `${JF_ACCESS_TOKEN}`) | `access_token` (env_var_name, default `JF_ACCESS_TOKEN`) |
+| `password` (string, default `${JF_PASSWORD}`) | `password` (env_var_name, default `JF_PASSWORD`) |
+| `user` (string, default `${JF_USER}`) | `username` (env_var_name, default `JF_USER`) |
+| `use` | `set_default` |
+
+Pipelines that rely on the defaults (`JF_ACCESS_TOKEN`, `JF_USER`, `JF_PASSWORD`) need no change. `url` and `artifactory_url` are still strings expanded with `circleci env subst`.
 
 ### v0.2.0: configure and ping
 

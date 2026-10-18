@@ -21,6 +21,11 @@ jobs:
       # Later jf steps in this job are not the configure command, so they would
       # otherwise call api.github.com and print a new-version warning.
       JFROG_CLI_AVOID_NEW_VERSION_WARNING: "true"
+      # Placeholder credentials. configure names these variables; with a token
+      # it does not contact JFrog.
+      ORB_TEST_JF_TOKEN: orb-configure-test-token
+      ORB_TEST_JF_TOKEN_2: orb-configure-test-token-2
+      ORB_TEST_JF_USER: ci
     steps:
       - checkout
       - jfrog-orb/install
@@ -35,7 +40,7 @@ jobs:
       # a live ping needs an Artifactory that can answer, and a dead host can hang.
       - jfrog-orb/configure:
           url: https://example.jfrog.io
-          access_token: orb-configure-test-token
+          access_token: ORB_TEST_JF_TOKEN
       - run:
           name: Verify configure saved a server profile
           command: |
@@ -54,8 +59,8 @@ jobs:
       - jfrog-orb/configure:
           server_id: second-server
           url: https://other.example.jfrog.io
-          access_token: orb-configure-test-token-2
-          use: false
+          access_token: ORB_TEST_JF_TOKEN_2
+          set_default: false
       - run:
           name: Verify a second server does not replace the default
           command: |
@@ -65,15 +70,15 @@ jobs:
             grep -Eq '^Default:[[:space:]]+true[[:space:]]*$' \<<< "$show_first"
             grep -Eq '^Default:[[:space:]]+false[[:space:]]*$' \<<< "$show_second"
             if grep -q second-server "$BASH_ENV"; then
-              echo "use: false wrote the second server id into BASH_ENV"
+              echo "set_default: false wrote the second server id into BASH_ENV"
               exit 1
             fi
       - jfrog-orb/install:
           version: "2.70.0"
       - jfrog-orb/configure:
           url: https://example.jfrog.io
-          user: ci
-          access_token: orb-configure-test-token
+          username: ORB_TEST_JF_USER
+          access_token: ORB_TEST_JF_TOKEN
       - run:
           name: Verify configure against jf 2.70.0
           command: |
@@ -95,6 +100,9 @@ jobs:
       # Later jf steps in this job are not the configure command, so they would
       # otherwise call api.github.com and print a new-version warning.
       JFROG_CLI_AVOID_NEW_VERSION_WARNING: "true"
+      # Placeholder credential. configure names this variable; with a token it
+      # does not contact JFrog.
+      ORB_TEST_JF_TOKEN: orb-configure-test-token
     steps:
       # install creates install_path and adds it to the PATH of later steps,
       # so the machine executor needs no preparation for it.
@@ -111,7 +119,7 @@ jobs:
             jf --version
       - jfrog-orb/configure:
           url: https://example.jfrog.io
-          access_token: orb-configure-test-token
+          access_token: ORB_TEST_JF_TOKEN
       - run:
           name: Verify configure on arm64
           command: |
@@ -131,7 +139,7 @@ jobs:
             grep -F "2.70.0" \<<< "$version"
       - jfrog-orb/configure:
           url: https://example.jfrog.io
-          access_token: orb-configure-test-token
+          access_token: ORB_TEST_JF_TOKEN
       - run:
           name: Verify configure against jf 2.70.0 on arm64
           command: |
