@@ -325,7 +325,7 @@ Linux executors on `x86_64` (amd64) and `aarch64`/`arm64` (arm64), including Cir
 
 The download cache is keyed by `jf` version, executor architecture and home directory, so amd64 and arm64 jobs never share a cached binary. On executors whose `PATH` doesn't already include `install_path` (for example, machine executors), `install` adds it for later steps through `BASH_ENV`.
 
-`install` needs bash 4 or newer, `curl` or `wget`, and `sha512sum` when it verifies. `configure` and `ping` run under `/bin/bash` and need the CircleCI CLI (`circleci`) to expand their parameters, and `configure` with `encrypt_password: true` needs `base64`. CI runs `install` and `configure` on `cimg/base` (amd64) and on an `ubuntu-2404` machine with `arm.medium` (arm64), with `jf` 2.125.0 and 2.70.0, the newest and oldest versions in the table. `ping` needs a live Artifactory, so its tests run against a stubbed `jf`.
+`install` needs bash 4 or newer, `mktemp`, and `curl` or `wget`, plus `sha512sum` when it verifies. `configure` and `ping` run under `/bin/bash` and need the CircleCI CLI (`circleci`) to expand their parameters, and `configure` with `encrypt_password: true` needs `base64`. CI runs `install` and `configure` on `cimg/base` (amd64) and on an `ubuntu-2404` machine with `arm.medium` (arm64), with `jf` 2.125.0 and 2.70.0, the newest and oldest versions in the table. `ping` needs a live Artifactory, so its tests run against a stubbed `jf`.
 
 ## 🔐 Checksum Verification
 
