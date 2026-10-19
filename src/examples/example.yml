@@ -6,7 +6,7 @@ description: >
 usage:
   version: 2.1
   orbs:
-    jfrog-orb: juburr/jfrog-orb@0.2.0
+    jfrog-orb: juburr/jfrog-orb@1.0.0
   jobs:
     jfrog-cli:
       docker:

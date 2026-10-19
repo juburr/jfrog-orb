@@ -101,7 +101,7 @@ Add the orb and call `install` before any step that uses `jf`. Copy this into `.
 version: 2.1
 
 orbs:
-  jfrog-orb: juburr/jfrog-orb@0.2
+  jfrog-orb: juburr/jfrog-orb@1.0.0
 
 jobs:
   publish:
@@ -264,7 +264,7 @@ Environment variables are expanded in `install`'s `version` and `install_path`, 
 
 ## 📦 Upgrading
 
-### Unreleased: Configure Takes Credential Variable Names
+### v1.0.0: Configure Takes Credential Variable Names
 
 > [!IMPORTANT]
 > `configure`'s credential parameters now take the name of an environment variable instead of the secret, like the other juburr orbs. Pass `access_token: MY_TOKEN`, not `access_token: ${MY_TOKEN}` or the token itself. A `${...}` value now fails with an error that it is not a variable name.
@@ -278,19 +278,19 @@ Environment variables are expanded in `install`'s `version` and `install_path`, 
 
 Pipelines that rely on the defaults (`JF_ACCESS_TOKEN`, `JF_USER`, `JF_PASSWORD`) need no change. `url` and `artifactory_url` are still strings expanded with `circleci env subst`.
 
-### Unreleased: Messages on stderr
+### v1.0.0: Messages on stderr
 
 `configure` and `ping` now write their `ERROR:` and `WARN:` messages, and the `jf config show` output `configure` prints with an error, to stderr instead of stdout.
 
-### v0.2.0: Configure and Ping
+### v1.0.0: Configure and Ping
 
 `configure` writes one `jf` server profile and checks that the token or password was actually saved. `ping` runs `jf rt ping`. Pipelines that only call `install` are unchanged.
 
-### v0.2.0: arm64 Support
+### v1.0.0: arm64 Support
 
 `install` now detects the machine architecture and installs `jfrog-cli-linux-arm64` on `aarch64` machines, verified against its own SHA-512 checksum. Every `jf` version in the checksum table (2.70.0 and later) has both amd64 and arm64 entries. Earlier releases installed the amd64 binary everywhere, which arm64 machines can't run natively. Other architectures and non-Linux machines now fail with an error instead of installing an amd64 binary. Cache keys now include the architecture, so the first run after upgrading downloads `jf` again.
 
-### v0.2.0: Checksum Verification Fails Closed
+### v1.0.0: Checksum Verification Fails Closed
 
 `install` now defaults to `verify_checksums: strict`. If you install a `jf` version that this orb has no SHA-512 checksum for, the step fails instead of installing an unverified binary. Earlier releases defaulted to `known_versions`, which printed a warning and installed it anyway.
 
@@ -361,7 +361,7 @@ The `install` command checks the downloaded `jf` binary against a SHA-512 lookup
 The table lists every `jf` release from 2.70.0 through 2.125.0, the default `version`, on both architectures. Each entry comes from a `releases.jfrog.io` download whose SHA-256 matched the checksum Artifactory records for that file. If you pin a `jf` release newer than this orb, `strict` fails until the orb is upgraded. Upgrade the orb (or [contribute the checksum](#-contributing)) rather than opting out. Use `known_versions` only as a temporary opt-out, for cases where you accept running an unverified binary.
 
 > [!WARNING]
-> **Changed in v0.2.0:** the default was previously `known_versions`, which installed unlisted versions without verification. Pipelines that pin a `jf` version newer than the orb's table now fail until they upgrade the orb or set `verify_checksums: known_versions` explicitly.
+> **Changed in v1.0.0:** the default was previously `known_versions`, which installed unlisted versions without verification. Pipelines that pin a `jf` version newer than the orb's table now fail until they upgrade the orb or set `verify_checksums: known_versions` explicitly.
 
 ## 🌐 Network Access
 
