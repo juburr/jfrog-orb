@@ -18,19 +18,39 @@ set +o xtrace
 # HTTP 200 (an HTML page, for example) can be stored as the password while
 # the command still exits 0. Access tokens are stored as themselves either way.
 
-if ! command -v circleci >/dev/null 2>&1; then
-    echo "ERROR: The circleci CLI is not on PATH, so command parameters cannot be expanded." >&2
-    exit 1
-fi
-
 # This step should not call api.github.com to ask whether a newer jf exists.
 # Later jf commands in the job still do that check unless the job sets the variable.
 export JFROG_CLI_AVOID_NEW_VERSION_WARNING=true
 
-# Pipe the value on stdin. `circleci env subst` with no argument reads stdin;
-# an empty argument is not a reliable way to expand an empty parameter.
+# Expand environment variables in a parameter value. With the circleci CLI,
+# the value is piped to `circleci env subst` on stdin: with no argument it
+# reads stdin, and an empty argument is not a reliable way to expand an empty
+# parameter. Without the CLI, as on a GitHub Actions runner, $NAME and ${NAME}
+# are replaced here with the value of that exported variable (the variables
+# the CLI would see), or with nothing, so url's default ${JF_URL} reads JF_URL
+# there too. Nothing else in the value is expanded or run.
 subst() {
-    printf '%s' "$1" | circleci env subst
+    if command -v circleci >/dev/null 2>&1; then
+        printf '%s' "$1" | circleci env subst
+        return
+    fi
+    local subst_rest="$1" subst_out="" subst_ref subst_name subst_decl
+    # shellcheck disable=SC2016 # a regular expression, not an expansion
+    local subst_re='\$(\{([A-Za-z_][A-Za-z0-9_]*)\}|[A-Za-z_][A-Za-z0-9_]*)'
+    # Ranges in a bracket expression follow the locale; in C they are ASCII only.
+    local LC_ALL=C
+    while [[ "$subst_rest" =~ $subst_re ]]; do
+        subst_ref="${BASH_REMATCH[0]}"
+        subst_name="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+        subst_out+="${subst_rest%%"$subst_ref"*}"
+        subst_rest="${subst_rest#*"$subst_ref"}"
+        subst_decl="$(declare -p "$subst_name" 2>/dev/null)" || subst_decl=""
+        subst_decl="${subst_decl#declare -}"
+        if [[ "${subst_decl%% *}" == *x* ]]; then
+            subst_out+="${!subst_name-}"
+        fi
+    done
+    printf '%s' "${subst_out}${subst_rest}"
 }
 
 trim() {

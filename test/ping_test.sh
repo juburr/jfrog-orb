@@ -247,9 +247,30 @@ export PATH_MODE=no-jf
 export JFROG_CLI_SERVER_ID=jfrog-server
 run_ping "missing jf fails" fail "Run the install command before ping."
 
+# Without the circleci CLI, as on a GitHub Actions runner, the script expands
+# $NAME and ${NAME} itself, from exported variables only, and nothing else.
 set_defaults
 export PATH_MODE=no-circleci
-run_ping "missing circleci CLI fails" fail "circleci CLI is not on PATH"
+# shellcheck disable=SC2016
+export PARAM_SERVER_ID='${MY_SERVER}-$MY_SERVER'
+export MY_SERVER=from-env
+run_ping "without the circleci CLI, server_id is expanded" pass "server id: from-env-from-env"
+assert_log_has "expanded server id without the CLI" "--server-id=from-env-from-env"
+
+set_defaults
+export PATH_MODE=no-circleci
+# shellcheck disable=SC2016
+export PARAM_SERVER_ID='${MY_SERVER}'
+export JFROG_CLI_SERVER_ID=jfrog-server
+run_ping "without the circleci CLI, an unset variable expands to nothing" pass "server id: jfrog-server"
+assert_log_has "an empty server id falls back without the CLI" "--server-id=jfrog-server"
+
+set_defaults
+export PATH_MODE=no-circleci
+# shellcheck disable=SC2016
+export PARAM_SERVER_ID='$(id)'
+# shellcheck disable=SC2016
+run_ping "without the circleci CLI, a command substitution stays literal" pass 'server id: $(id)'
 
 set_defaults
 export JF_PING_EXIT=7
