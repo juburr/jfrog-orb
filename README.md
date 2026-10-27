@@ -2,27 +2,29 @@
 
 <img src="assets/logos/jfrog-orb-512px.png" width="256" alt="JFrog Orb logo: a smiling green frog riding a ringed orb, with the words Build, Package, Deploy">
 
-# JFrog Orb for CircleCI
+# JFrog CLI for CircleCI and GitHub Actions
 
 ### The exact JFrog CLI you pinned, checksum-verified and on your `PATH`, with one line of YAML.
 
 Install the [JFrog CLI](https://github.com/jfrog/jfrog-cli) (`jf`) and point it at your JFrog Platform with `configure` and `ping`,<br>
-passing credentials by variable name, never by value.<br>
+passing credentials by variable name, never by value, from a CircleCI orb or GitHub Actions.<br>
 Strict SHA-512 verification by default · No `sudo` · amd64 and arm64 · Cached between runs
 
 [![CircleCI Build Status](https://circleci.com/gh/juburr/jfrog-orb.svg?style=shield "CircleCI Build Status")](https://circleci.com/gh/juburr/jfrog-orb)
+[![GitHub Actions Status](https://github.com/juburr/jfrog-orb/actions/workflows/actions.yml/badge.svg?branch=main "GitHub Actions Status")](https://github.com/juburr/jfrog-orb/actions/workflows/actions.yml)
 [![CircleCI Orb Version](https://badges.circleci.com/orbs/juburr/jfrog-orb.svg)](https://circleci.com/developer/orbs/orb/juburr/jfrog-orb)
 [![GitHub License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![CircleCI Community](https://img.shields.io/badge/community-CircleCI%20Discuss-343434.svg)](https://discuss.circleci.com/c/ecosystem/orbs)
 
+[![CircleCI orb and GitHub Actions](https://img.shields.io/badge/CI-CircleCI%20%7C%20GitHub%20Actions-3AD466?style=for-the-badge&labelColor=1B2A22)](#-github-actions)
 [![JFrog CLI 2.70.0 to 2.125.0](https://img.shields.io/badge/jf-2.70.0%20to%202.125.0-3AD466?style=for-the-badge&labelColor=1B2A22&logo=jfrog&logoColor=white)](#-checksum-verification)
 [![amd64 and arm64](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-3AD466?style=for-the-badge&labelColor=1B2A22&logo=linux&logoColor=white)](#-supported-platforms)
 [![SHA-512 verified by default](https://img.shields.io/badge/SHA--512-strict%20by%20default-3AD466?style=for-the-badge&labelColor=1B2A22)](#-checksum-verification)
 [![No sudo required](https://img.shields.io/badge/sudo-not%20required-3AD466?style=for-the-badge&labelColor=1B2A22)](#-secure-by-design)
 
-**[Quick Start](#-quick-start)** · **[Features](#-why-jfrog-orb)** · **[Recipes](#-recipes)** · **[Connecting to JFrog](#-connecting-to-jfrog)** · **[Commands](#-commands)** · **[Security](#-secure-by-design)** · **[Network Access](#-network-access)**
+**[Quick Start](#-quick-start)** · **[Features](#-why-jfrog-orb)** · **[Recipes](#-recipes)** · **[Connecting to JFrog](#-connecting-to-jfrog)** · **[CircleCI Commands](#-circleci-commands)** · **[GitHub Actions](#-github-actions)** · **[Security](#-secure-by-design)** · **[Network Access](#-network-access)**
 
-<sub>An unofficial, community-maintained orb. [Contributions are welcome!](#-contributing)</sub>
+<sub>An unofficial, community-maintained CircleCI orb and set of GitHub Actions. [Contributions are welcome!](#-contributing)</sub>
 
 </div>
 
@@ -48,7 +50,7 @@ Every binary, downloaded or restored from cache, is checked against a SHA-512 ta
 <tr>
 <td width="33%" valign="top">
 🦾 <b>amd64 and arm64</b><br><br>
-Detects the machine and installs the matching Linux build, including on CircleCI's <code>arm.*</code> resource classes.
+Detects the machine and installs the matching Linux build, including on CircleCI's <code>arm.*</code> resource classes and GitHub's Arm runners.
 </td>
 <td width="33%" valign="top">
 🔓 <b>No root needed</b><br><br>
@@ -95,13 +97,13 @@ flowchart LR
 
 ## 🚀 Quick Start
 
-Add the orb and call `install` before any step that uses `jf`. Copy this into `.circleci/config.yml`:
+Call `install` before any step that uses `jf`. On CircleCI, add the orb to `.circleci/config.yml`:
 
 ```yaml
 version: 2.1
 
 orbs:
-  jfrog-orb: juburr/jfrog-orb@1.0.0
+  jfrog-orb: juburr/jfrog-orb@1.1.0
 
 jobs:
   publish:
@@ -119,6 +121,29 @@ workflows:
 ```
 
 That's it. `jf` is on your `PATH`, verified, and cached for the next run. To point it at a JFrog Platform, add [`configure`](#-connecting-to-jfrog) and [`ping`](#pinging-artifactory) after `install`, as in [Connect to Artifactory and Upload a Build](#connect-to-artifactory-and-upload-a-build).
+
+On GitHub Actions, use the `install`, `configure` and `ping` actions in a workflow, such as `.github/workflows/publish.yml`. The token is set only for the `configure` step, whose server profile serves the later steps:
+
+```yaml
+name: Publish
+
+on: push
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: juburr/jfrog-orb/actions/install@v1.1.0
+      - uses: juburr/jfrog-orb/actions/configure@v1.1.0
+        env:
+          JF_URL: ${{ vars.JF_URL }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+      - uses: juburr/jfrog-orb/actions/ping@v1.1.0
+      - run: jf rt upload "dist/*" my-generic-repo/
+```
+
+See [GitHub Actions](#-github-actions) for how the actions map to the orb's commands. CircleCI has no `latest` tag for registry orbs, so pin a release (for the actions, a release tag such as `v1.1.0`). The orb version badge above shows the newest one.
 
 > [!TIP]
 > Upgrading and passing `access_token: ${MY_TOKEN}` to `configure`? Its credential parameters now take the variable's name instead. See [Upgrading](#-upgrading).
@@ -221,7 +246,7 @@ Password encryption is off (`encrypt_password: false`). Turning it on sends the 
 > [!NOTE]
 > A successful ping means Artifactory answered. It does not prove permission to a repository. An anonymous Artifactory returns OK even when the token is wrong.
 
-## 🧰 Commands
+## 🧰 CircleCI Commands
 
 ### `jfrog-orb/install`
 
@@ -262,7 +287,35 @@ Pings Artifactory with `jf rt ping`, using this command's `server_id`, otherwise
 
 Environment variables are expanded in `install`'s `version` and `install_path`, in `configure`'s `server_id`, `url` and `artifactory_url`, and in `ping`'s `server_id`. `access_token`, `username` and `password` are variable names, used as given.
 
+## ⚡ GitHub Actions
+
+Each of the orb's commands has a GitHub Action of the same name. The actions run the same scripts as the orb, so they install, verify, configure and ping the same way, and take the same inputs with the same defaults.
+
+| Action | Orb command | Inputs |
+| --- | --- | --- |
+| `juburr/jfrog-orb/actions/install` | [`jfrog-orb/install`](#jfrog-orbinstall) | `version`, `verify_checksums`, `caching`, `install_path` |
+| `juburr/jfrog-orb/actions/configure` | [`jfrog-orb/configure`](#jfrog-orbconfigure) | `server_id`, `url`, `artifactory_url`, `access_token`, `username`, `password`, `overwrite`, `insecure_tls`, `encrypt_password`, `set_default` |
+| `juburr/jfrog-orb/actions/ping` | [`jfrog-orb/ping`](#jfrog-orbping) | `server_id`, `insecure_tls` |
+
+The [Quick Start](#-quick-start) shows a complete workflow. How they differ from the orb's commands:
+
+- **Versions.** An action is referenced by the repository's release tag, such as `v1.1.0`, the same tag the orb is published from. There is no moving major tag such as `v1` yet. For the strongest pinning, use the tag's commit SHA: `juburr/jfrog-orb/actions/configure@<sha> # v1.1.0`.
+- **Credentials.** As in the orb, `access_token`, `username` and `password` name environment variables. Set them from secrets in the `env` of the `configure` step, so no other step sees the token: the server profile `configure` writes under `~/.jfrog` serves later `jf` commands in the job.
+- **Environment variables.** The orb expands `$NAME` in `configure`'s `server_id`, `url` and `artifactory_url`, and in `ping`'s `server_id`, with the CircleCI CLI, which GitHub's runners don't have. Without it, `configure` and `ping` replace `$NAME` and `${NAME}` themselves with the value of that environment variable, or with nothing when it is unset, and expand nothing else. So `url`'s default, `${JF_URL}`, reads `JF_URL` from the step's environment, as on CircleCI. GitHub's expressions, such as `url: ${{ vars.JF_URL }}`, work too. `install` takes `version` and `install_path` as they are, apart from a leading `~/` in `install_path`.
+- **Booleans.** CircleCI checks the orb's booleans before any step runs. The actions' inputs are plain strings, which the scripts check: `overwrite`, `insecure_tls`, `encrypt_password` and `set_default` take `true` or `false`.
+- **Caching.** `install` caches the verified release with [`actions/cache`](https://github.com/actions/cache), using the same key ingredients as the orb. The cache counts toward the repository's GitHub Actions cache storage, which GitHub limits (10 GB by default) by evicting the least recently used caches.
+- **`PATH` and `JFROG_CLI_SERVER_ID`.** `install` puts `install_path` on the `PATH` of later steps through `GITHUB_PATH`, and `configure` with `set_default: true` sets `JFROG_CLI_SERVER_ID` for them through `GITHUB_ENV`.
+- **Runners.** CI installs on `ubuntu-24.04` and `ubuntu-24.04-arm`, and once from the cache with the download host blocked. On both runners it configures servers as on CircleCI, reads `url`'s default from `JF_URL`, and pings a local stand-in for Artifactory's ping endpoint, then a server that doesn't answer.
+
+The actions are composite actions in [`actions/`](actions), next to the orb's source. Each passes its inputs to the orb's script as environment variables, and [`actions/run_script.sh`](actions/run_script.sh) gives the script what CircleCI would: a `BASH_ENV` file for the values it hands to later steps, which it then passes on through `GITHUB_PATH` and `GITHUB_ENV`.
+
+JFrog's own [setup-jfrog-cli](https://github.com/jfrog/setup-jfrog-cli) action also installs `jf` and configures a server, and supports OpenID Connect. These actions install only versions this orb's checksum table verifies, by default, and configure the server the way the orb does.
+
 ## 📦 Upgrading
+
+### v1.1.0: GitHub Actions
+
+`install`, `configure` and `ping` are now also [GitHub Actions](#-github-actions). `configure` and `ping` no longer fail when the CircleCI CLI isn't on the `PATH`: they expand `$NAME` and `${NAME}` in their parameters themselves instead. CircleCI executors have the CLI, so pipelines there are unchanged.
 
 ### v1.0.0: Configure Takes Credential Variable Names
 
@@ -307,7 +360,7 @@ Pipelines that use the orb's default `jf` version, or any version in the checksu
 - **Least Privilege**: Installs to a user-owned directory (`$HOME/bin` by default), with no `sudo` usage anywhere in this orb.
 - **Integrity**: SHA-512 checksum validation of downloaded binaries, on by default and failing closed: a `jf` version this orb has no checksum for is refused, not installed unverified, and a binary that can't run on the executor never replaces an existing install. See [Checksum Verification](#-checksum-verification) for the `known_versions` and `"false"` opt-outs. `configure` doesn't trust `jf config add`'s exit code alone: it reads the profile back and fails when the URL or credential is missing.
 - **Provenance**: Installs directly from JFrog's official release host, `releases.jfrog.io`, which serves the binary through its CDN, `releases-cdn.jfrog.io`. No third-party websites, domains, or proxies are used. JFrog doesn't sign the `jf` binaries, so each checksum in the orb's table comes from a download whose SHA-256 matched the checksum JFrog's Artifactory records for that file.
-- **Confidentiality**: `access_token`, `username` and `password` take environment variable *names*, never literal values. The token or password reaches `jf` on stdin, never on its command line, and `configure` stops exporting the variables that hold them before it runs `jf`, so the secret isn't in `jf`'s environment either; later steps still see them. URLs are logged with any embedded credentials masked, `configure` and `ping` turn off xtrace, and `JFROG_CLI_SERVER_ID` is written to `$BASH_ENV` shell-quoted. Password encryption, which sends the password to Artifactory, is off unless you turn it on. All of this follows CircleCI's [security recommendations](https://circleci.com/docs/security-recommendations/) and [best practices](https://circleci.com/docs/orbs-best-practices/).
+- **Confidentiality**: `access_token`, `username` and `password` take environment variable *names*, never literal values. The GitHub Actions pass inputs to the scripts as environment variables, never pasting them into a script, and pin the actions they use (`actions/cache`) to a commit SHA. The token or password reaches `jf` on stdin, never on its command line, and `configure` stops exporting the variables that hold them before it runs `jf`, so the secret isn't in `jf`'s environment either; later steps still see them. URLs are logged with any embedded credentials masked, `configure` and `ping` turn off xtrace, and `JFROG_CLI_SERVER_ID` is written to `$BASH_ENV` shell-quoted. Password encryption, which sends the password to Artifactory, is off unless you turn it on. All of this follows CircleCI's [security recommendations](https://circleci.com/docs/security-recommendations/) and [best practices](https://circleci.com/docs/orbs-best-practices/).
 - **Privacy**: No usage data of any kind is collected or shipped back to the orb developer. `jf` itself is a separate matter: most `jf` commands check `api.github.com` for a newer release, which `configure` and `ping` turn off for their own steps (see [Network Access](#-network-access)), and `jf` can send usage statistics to the Artifactory server you configure. Set `JFROG_CLI_AVOID_NEW_VERSION_WARNING: "true"` and `JFROG_CLI_REPORT_USAGE: "false"` in the job's `environment` to turn both off for your own steps.
 
 > [!IMPORTANT]
@@ -325,7 +378,9 @@ Linux executors on `x86_64` (amd64) and `aarch64`/`arm64` (arm64), including Cir
 
 The download cache is keyed by `jf` version, executor architecture and home directory, so amd64 and arm64 jobs never share a cached binary. On executors whose `PATH` doesn't already include `install_path` (for example, machine executors), `install` adds it for later steps through `BASH_ENV`.
 
-`install` needs bash 4 or newer, `curl` or `wget`, `awk`, and the standard coreutils, including `mktemp` and, when it verifies, `sha512sum`. `configure` and `ping` run under `/bin/bash` and need the CircleCI CLI (`circleci`) to expand their parameters, and `configure` with `encrypt_password: true` needs `base64`. CI runs `install` and `configure` on `cimg/base` (amd64) and on an `ubuntu-2404` machine with `arm.medium` (arm64), with `jf` 2.125.0 and 2.70.0, the newest and oldest versions in the table. `ping` needs a live Artifactory, so its tests run against a stubbed `jf`.
+`install` needs bash 4 or newer, `curl` or `wget`, `awk`, and the standard coreutils, including `mktemp` and, when it verifies, `sha512sum`. `configure` and `ping` run under `/bin/bash` and expand their parameters with the CircleCI CLI (`circleci`), or without it, as on GitHub's runners, expand `$NAME` and `${NAME}` themselves. `configure` with `encrypt_password: true` needs `base64`. CI runs `install` and `configure` on `cimg/base` (amd64) and on an `ubuntu-2404` machine with `arm.medium` (arm64), with `jf` 2.125.0 and 2.70.0, the newest and oldest versions in the table. `ping` needs a live Artifactory, so its CircleCI tests run against a stubbed `jf`.
+
+The [GitHub Actions](#-github-actions) run on GitHub-hosted `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64) runners, which CI covers, pinging a local stand-in for Artifactory there, and on self-hosted Linux runners with the same tools.
 
 ## 🔐 Checksum Verification
 
@@ -371,7 +426,7 @@ Hosts to allow (HTTPS, port 443) when running on a locked-down or self-hosted ru
 | --- | --- | --- |
 | `releases.jfrog.io` | `install` | `jf` release downloads, from `https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/<version>/jfrog-cli-linux-<arch>/jf` |
 | `releases-cdn.jfrog.io` | `install` | `releases.jfrog.io` answers every download with an HTTP 302 redirect to a signed URL on this CDN host, which serves the binary. Allowing `releases.jfrog.io` alone is not enough. |
-| CircleCI's cache storage | `install` with `caching: true` (the default) | The built-in `restore_cache` and `save_cache` steps. On CircleCI cloud with self-hosted runners, that requires outbound HTTPS to `circleci-tasks-prod.s3.us-east-1.amazonaws.com` (see the [runner FAQ](https://circleci.com/docs/guides/execution-runner/runner-faqs/#what-connectivity-is-required)). On CircleCI server, caches go to your installation's own object storage instead. Set `caching: false` to avoid cache traffic entirely. |
+| CircleCI's cache storage | `install` with `caching: true` (the default) | The built-in `restore_cache` and `save_cache` steps. On CircleCI cloud with self-hosted runners, that requires outbound HTTPS to `circleci-tasks-prod.s3.us-east-1.amazonaws.com` (see the [runner FAQ](https://circleci.com/docs/guides/execution-runner/runner-faqs/#what-connectivity-is-required)). On CircleCI server, caches go to your installation's own object storage instead. Set `caching: false` to avoid cache traffic entirely. On GitHub Actions, the cache uses GitHub's cache service through `actions/cache`: GitHub-hosted runners always can, and a self-hosted runner needs the hosts GitHub lists for [communication with GitHub](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners#communication-between-self-hosted-runners-and-github). |
 | Your JFrog Platform or Artifactory | `ping`; `configure` only with `encrypt_password: true` | `ping` runs `jf rt ping` against the configured server. `encrypt_password: true` sends the password in a `GET` to `<artifactory-url>/api/security/encryptedPassword`. |
 
 Nothing else:
@@ -392,7 +447,7 @@ This is an unofficial, community-maintained orb, and contributions are welcome! 
 
 - **Found a bug or have an idea?** [Open an issue](https://github.com/juburr/jfrog-orb/issues).
 - **Need a newer `jf` release?** New releases need a checksum entry before `strict` mode will install them. Generate its checksums with `src/scripts/install_hash.sh -v <version>`, paste them into the `sha512sums` table in [`src/scripts/install.sh`](src/scripts/install.sh), and open a pull request. The script checks each download against the SHA-256 that Artifactory recorded before printing its SHA-512, for both architectures, and needs `jq` plus bash 4 or newer, `curl`, `awk`, `sed`, `tar`, `gzip` and the standard coreutils, including `mktemp`, `sha256sum` and `sha512sum`. For a release with nothing published to check against, `-c` takes a checksum from another official source (a SHA-1 one also needs `sha1sum`), or `NONE`; it never overrides what the release did publish.
-- **Before opening a pull request**, run the checks CI runs. The tests stub `jf` and downloads, so they need no network access. Run them in a UTF-8 locale: `test/configure_test.sh` fails under `LC_ALL=C`.
+- **Before opening a pull request**, run the checks CI runs. The tests stub `jf` and downloads, so they need no network access. Run them in a UTF-8 locale: `test/configure_test.sh` fails under `LC_ALL=C`. CI also runs integration tests on amd64 and arm64, with the orb's commands on CircleCI and the actions on GitHub's runners. A change to a command's parameters needs the same change to its action in `actions/`, which `test/actions_test.sh` checks.
 
   ```bash
   yamllint .
@@ -416,5 +471,5 @@ Need the logo for a slide deck, blog post, or internal developer portal? PNGs wi
   <br>
   <sub>Same <code>jf</code>, every run. If this orb helps your team, a ⭐ helps others find it.</sub>
   <br>
-  <sub><a href="#jfrog-orb-for-circleci">Back to top ↑</a></sub>
+  <sub><a href="#jfrog-cli-for-circleci-and-github-actions">Back to top ↑</a></sub>
 </div>

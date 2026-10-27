@@ -633,10 +633,58 @@ export PATH_MODE=no-jf
 run_configure "missing jf fails after the inputs are valid" fail "Run the install command before configure."
 assert_not_called "missing jf does not call jf"
 
+# Without the circleci CLI, as on a GitHub Actions runner, the script expands
+# $NAME and ${NAME} itself, from exported variables only, and nothing else.
 set_defaults
 export PATH_MODE=no-circleci
-run_configure "missing circleci CLI fails" fail "circleci CLI is not on PATH"
-assert_not_called "missing circleci does not call jf"
+# shellcheck disable=SC2016
+export PARAM_URL='${JF_URL}'
+export JF_URL=https://from-env.jfrog.io
+run_configure "without the circleci CLI, url's default reads JF_URL" pass "url: https://from-env.jfrog.io"
+assert_log_has "expanded url without the CLI" "--url=https://from-env.jfrog.io"
+assert_stdin "token on stdin without the CLI" "token-secret-value"
+
+set_defaults
+export PATH_MODE=no-circleci
+# shellcheck disable=SC2016
+export PARAM_SERVER_ID='ci-$MY_USER-${MY_USER}'
+export MY_USER=bot
+run_configure "without the circleci CLI, \$NAME and \${NAME} are expanded" pass "server_id: ci-bot-bot"
+assert_log_has "expanded server id without the CLI" "config add ci-bot-bot"
+
+set_defaults
+export PATH_MODE=no-circleci
+# shellcheck disable=SC2016
+export PARAM_URL='${JF_URL}'
+run_configure "without the circleci CLI, an unset variable expands to nothing" fail "No JFrog URL."
+assert_not_called "an empty url does not call jf without the CLI"
+
+# The token variable is no longer exported when parameters are expanded, and
+# the script's own variables never are, so neither reaches the URL.
+set_defaults
+export PATH_MODE=no-circleci
+# shellcheck disable=SC2016
+export PARAM_URL='https://example.jfrog.io/x${JF_ACCESS_TOKEN}${ACCESS_TOKEN_VAR}$subst_rest'
+run_configure "without the circleci CLI, only exported variables are expanded" pass "url: https://example.jfrog.io/x"
+assert_log_has "unexported variables expand to nothing" "--url=https://example.jfrog.io/x "
+assert_out_lacks "the token is not expanded into the url" "token-secret-value"
+
+set_defaults
+export PATH_MODE=no-circleci
+# shellcheck disable=SC2016
+export PARAM_SERVER_ID='$(touch pwned)`touch pwned`'
+# shellcheck disable=SC2016
+run_configure "without the circleci CLI, command substitutions stay literal" pass 'server_id: $(touch pwned)`touch pwned`'
+if [[ -e "${TMP}/work-${CASE_N}/pwned" ]]; then
+  bad "command substitutions are not run without the CLI" "pwned was created"
+else
+  ok "command substitutions are not run without the CLI"
+fi
+
+set_defaults
+export PATH_MODE=no-circleci
+export PARAM_SERVER_ID=-n
+run_configure "without the circleci CLI, a value starting with - is kept" fail "server_id must not start with '-'."
 
 set_defaults
 unset JF_ACCESS_TOKEN

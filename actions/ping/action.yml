@@ -1,0 +1,33 @@
+name: Ping Artifactory
+description: >
+  Pings Artifactory with jf rt ping. The server id is this action's server_id
+  when set, otherwise JFROG_CLI_SERVER_ID from configure, otherwise the
+  default server. Run the install and configure actions first. A successful
+  ping means the Artifactory URL answered. It does not prove permission to a
+  repository, and an anonymous Artifactory returns OK for a wrong token. This
+  step does not call api.github.com to check for a newer jf. The GitHub
+  Actions twin of the orb's ping command.
+author: juburr
+
+inputs:
+  server_id:
+    description: >
+      Server id to ping. Leave empty to use JFROG_CLI_SERVER_ID, or the
+      default server when that variable is unset. $NAME and ${NAME} are
+      replaced with the value of that environment variable.
+    default: ""
+  insecure_tls:
+    description: >
+      Pass --insecure-tls to jf rt ping. This does not change the saved server
+      profile.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Ping Artifactory
+      shell: bash
+      env:
+        PARAM_SERVER_ID: ${{ inputs.server_id }}
+        PARAM_INSECURE_TLS: ${{ inputs.insecure_tls }}
+      run: bash "${GITHUB_ACTION_PATH}/../run_script.sh" "${GITHUB_ACTION_PATH}/../../src/scripts/ping.sh"

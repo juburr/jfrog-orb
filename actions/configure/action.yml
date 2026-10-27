@@ -1,0 +1,96 @@
+name: Configure JFrog CLI
+description: >
+  Adds one JFrog server profile with jf config add, for later jf commands in
+  the same job. Run the install action first. url defaults to ${JF_URL}.
+  access_token, username and password are the names of environment
+  variables, JF_ACCESS_TOKEN, JF_USER and JF_PASSWORD by default; set them
+  from secrets in the step's or job's env. The access token or password is
+  passed on stdin. The step fails when the URL or credentials are missing, or
+  when both a token and a password are set, because jf config add exits 0
+  even if it stores an empty token. Password encryption is off unless
+  encrypt_password is true. This step does not call api.github.com to check
+  for a newer jf. The GitHub Actions twin of the orb's configure command.
+author: juburr
+
+inputs:
+  server_id:
+    description: >
+      Server id to write. Later commands use it as the default when
+      set_default is true. jf reserves the ids delete, use, show, and clear.
+    default: jfrog-server
+  url:
+    description: >
+      JFrog Platform URL passed to --url, for example https://acme.jfrog.io.
+      This is not the Artifactory URL with an /artifactory suffix. $NAME and
+      ${NAME} are replaced with the value of that environment variable, so
+      the default reads JF_URL. At least one of url and artifactory_url is
+      required.
+    default: "${JF_URL}"
+  artifactory_url:
+    description: >
+      Artifactory URL for a server that does not share one platform URL, such
+      as Artifactory 6. Prefer url for a JFrog Platform. $NAME and ${NAME} are
+      expanded as in url.
+    default: ""
+  access_token:
+    description: >
+      Name of the environment variable that holds the access token (a
+      reference token works too). The token is passed to jf on stdin. The
+      username is also stored when the variable named by username is set. Do
+      not set this variable together with the one named by password.
+    default: JF_ACCESS_TOKEN
+  username:
+    description: >
+      Name of the environment variable that holds the username. Optional next
+      to an access token, required with a password. A reference token used by
+      npm or Maven basic auth needs a username.
+    default: JF_USER
+  password:
+    description: >
+      Name of the environment variable that holds the password or API key,
+      passed to jf on stdin. Requires a username. Do not set this variable
+      together with the one named by access_token.
+    default: JF_PASSWORD
+  overwrite:
+    description: >
+      Replace an existing profile with the same server id. A rerun on a
+      self-hosted runner with a persisted home directory then updates the
+      token instead of failing.
+    default: "true"
+  insecure_tls:
+    description: >
+      Pass --insecure-tls while saving this profile. jf uses it when
+      encrypting a password and does not apply it to later commands. ping has
+      its own insecure_tls.
+    default: "false"
+  encrypt_password:
+    description: >
+      Ask Artifactory to encrypt the password before saving it. This calls the
+      platform and sends the password there. Leave this false unless url
+      points at a JFrog Platform you trust. Access tokens are unaffected.
+    default: "false"
+  set_default:
+    description: >
+      Make this server the default: run jf config use for this server id, and
+      set JFROG_CLI_SERVER_ID to the server id for later steps in the job.
+      Set false when adding another server that should not become the
+      default. jf still marks the first server it saves as the default.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Configure jf
+      shell: bash
+      env:
+        PARAM_SERVER_ID: ${{ inputs.server_id }}
+        PARAM_URL: ${{ inputs.url }}
+        PARAM_ARTIFACTORY_URL: ${{ inputs.artifactory_url }}
+        PARAM_ACCESS_TOKEN: ${{ inputs.access_token }}
+        PARAM_USERNAME: ${{ inputs.username }}
+        PARAM_PASSWORD: ${{ inputs.password }}
+        PARAM_OVERWRITE: ${{ inputs.overwrite }}
+        PARAM_INSECURE_TLS: ${{ inputs.insecure_tls }}
+        PARAM_ENCRYPT_PASSWORD: ${{ inputs.encrypt_password }}
+        PARAM_SET_DEFAULT: ${{ inputs.set_default }}
+      run: bash "${GITHUB_ACTION_PATH}/../run_script.sh" "${GITHUB_ACTION_PATH}/../../src/scripts/configure.sh"
