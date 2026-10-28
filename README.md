@@ -103,7 +103,7 @@ Call `install` before any step that uses `jf`. On CircleCI, add the orb to `.cir
 version: 2.1
 
 orbs:
-  jfrog-orb: juburr/jfrog-orb@1.1.0
+  jfrog-orb: juburr/jfrog-orb@1.1.1
 
 jobs:
   publish:
@@ -134,16 +134,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: juburr/jfrog-orb/actions/install@v1.1.0
-      - uses: juburr/jfrog-orb/actions/configure@v1.1.0
+      - uses: juburr/jfrog-orb/actions/install@v1.1.1
+      - uses: juburr/jfrog-orb/actions/configure@v1.1.1
         env:
           JF_URL: ${{ vars.JF_URL }}
           JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
-      - uses: juburr/jfrog-orb/actions/ping@v1.1.0
+      - uses: juburr/jfrog-orb/actions/ping@v1.1.1
       - run: jf rt upload "dist/*" my-generic-repo/
 ```
 
-See [GitHub Actions](#-github-actions) for how the actions map to the orb's commands. CircleCI has no `latest` tag for registry orbs, so pin a release (for the actions, a release tag such as `v1.1.0`). The orb version badge above shows the newest one.
+See [GitHub Actions](#-github-actions) for how the actions map to the orb's commands. CircleCI has no `latest` tag for registry orbs, so pin a release (for the actions, a release tag such as `v1.1.1`). The orb version badge above shows the newest one.
 
 > [!TIP]
 > Upgrading and passing `access_token: ${MY_TOKEN}` to `configure`? Its credential parameters now take the variable's name instead. See [Upgrading](#-upgrading).
@@ -299,7 +299,7 @@ Each of the orb's commands has a GitHub Action of the same name. The actions run
 
 The [Quick Start](#-quick-start) shows a complete workflow. How they differ from the orb's commands:
 
-- **Versions.** An action is referenced by the repository's release tag, such as `v1.1.0`, the same tag the orb is published from. There is no moving major tag such as `v1` yet. For the strongest pinning, use the tag's commit SHA: `juburr/jfrog-orb/actions/configure@<sha> # v1.1.0`.
+- **Versions.** An action is referenced by the repository's release tag, such as `v1.1.1`, the same tag the orb is published from. There is no moving major tag such as `v1` yet. For the strongest pinning, use the tag's commit SHA: `juburr/jfrog-orb/actions/configure@<sha> # v1.1.1`.
 - **Credentials.** As in the orb, `access_token`, `username` and `password` name environment variables. Set them from secrets in the `env` of the `configure` step, so no other step sees the token: the server profile `configure` writes under `~/.jfrog` serves later `jf` commands in the job.
 - **Environment variables.** The orb expands `$NAME` in `configure`'s `server_id`, `url` and `artifactory_url`, and in `ping`'s `server_id`, with the CircleCI CLI, which GitHub's runners don't have. Without it, `configure` and `ping` replace `$NAME` and `${NAME}` themselves with the value of that environment variable, or with nothing when it is unset, and expand nothing else. So `url`'s default, `${JF_URL}`, reads `JF_URL` from the step's environment, as on CircleCI. GitHub's expressions, such as `url: ${{ vars.JF_URL }}`, work too. `install` takes `version` and `install_path` as they are, apart from a leading `~/` in `install_path`.
 - **Booleans.** CircleCI checks the orb's booleans before any step runs. The actions' inputs are plain strings, which the scripts check: `overwrite`, `insecure_tls`, `encrypt_password` and `set_default` take `true` or `false`.
@@ -312,6 +312,10 @@ The actions are composite actions in [`actions/`](actions), next to the orb's so
 JFrog's own [setup-jfrog-cli](https://github.com/jfrog/setup-jfrog-cli) action also installs `jf` and configures a server, and supports OpenID Connect. These actions install only versions this orb's checksum table verifies, by default, and configure the server the way the orb does.
 
 ## 📦 Upgrading
+
+### v1.1.1: GitHub Actions Fixes
+
+Nothing changes for CircleCI pipelines. Two fixes to the GitHub Actions: they no longer trace the step's environment in a job that traces every step (`SHELLOPTS=xtrace`, or `set -x` in its `BASH_ENV`), where a secret could reach the log in a form GitHub doesn't mask; and they pass on every variable a command exports, even one the step already had.
 
 ### v1.1.0: GitHub Actions
 
